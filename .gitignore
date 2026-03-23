@@ -1,5 +1,6 @@
 # Rust
 **/target/
+hive_core/coverage_report/
 
 # Secretos y entorno local
 hive_core/.env

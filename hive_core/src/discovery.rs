@@ -964,4 +964,213 @@ mod tests {
             .iter()
             .any(|p| matches!(p.pattern_type, PatternType::TodoFixme)));
     }
+
+    #[test]
+    fn code_patterns_detecta_funcion_grande() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("README.md"), "# T").unwrap();
+        let mut body = String::from("fn enorme() {\n");
+        for i in 0..52 {
+            body.push_str(&format!("    println!(\"{i}\");\n"));
+        }
+        body.push_str("}\n");
+        fs::write(d.path().join("big.rs"), body).unwrap();
+        let r = colonize_and_analyze(d.path()).unwrap();
+        assert!(r
+            .dna
+            .code_patterns
+            .iter()
+            .any(|p| { matches!(p.pattern_type, PatternType::LargeFunction) }));
+    }
+
+    #[test]
+    fn code_patterns_detecta_anidacion_profunda() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("README.md"), "# T").unwrap();
+        // Más de 5 líneas con indentación > 16 espacios (véase `analyze_code_patterns`)
+        let line = "                    x();\n"; // 20 espacios
+        let deep = line.repeat(8);
+        fs::write(d.path().join("nested.rs"), deep).unwrap();
+        let r = colonize_and_analyze(d.path()).unwrap();
+        assert!(r
+            .dna
+            .code_patterns
+            .iter()
+            .any(|p| { matches!(p.pattern_type, PatternType::DeepNesting) }));
+    }
+
+    #[test]
+    fn extension_of_returns_extension() {
+        let path = std::path::Path::new("src/main.rs");
+        let ext = extension_of(path);
+        assert_eq!(ext, Some("rs".to_string()));
+    }
+
+    #[test]
+    fn extension_of_no_extension() {
+        let path = std::path::Path::new("Makefile");
+        let ext = extension_of(path);
+        assert_eq!(ext, None);
+    }
+
+    #[test]
+    fn extension_of_uppercase() {
+        let path = std::path::Path::new("src/Main.RS");
+        let ext = extension_of(path);
+        assert_eq!(ext, Some("rs".to_string()));
+    }
+
+    #[test]
+    fn all_strategies_returns_all() {
+        let strategies = all_strategies();
+        assert_eq!(strategies.len(), 6);
+        let keys: Vec<&str> = strategies.iter().map(|s| s.key()).collect();
+        assert!(keys.contains(&"rust"));
+        assert!(keys.contains(&"python"));
+        assert!(keys.contains(&"dart"));
+        assert!(keys.contains(&"c_family"));
+        assert!(keys.contains(&"js_ts"));
+        assert!(keys.contains(&"polyglot"));
+    }
+
+    #[test]
+    fn strategy_covered_extensions_contains_common() {
+        let covered = strategy_covered_extensions();
+        assert!(covered.contains(&"rs"));
+        assert!(covered.contains(&"py"));
+        assert!(covered.contains(&"js"));
+    }
+
+    #[test]
+    fn extension_histogram_profiles_generates_profiles() {
+        let mut h = HashMap::new();
+        h.insert("go".into(), 10);
+        h.insert("rb".into(), 3);
+        let dna = RepoDna {
+            extension_histogram: h,
+            manifest_hits: vec![],
+            debt: TechnicalDebtHints::default(),
+            dominant_languages: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
+        };
+        let ctx = ScanContext {
+            ext_counts: &dna.extension_histogram,
+            manifest_hits: &dna.manifest_hits,
+            debt: &dna.debt,
+        };
+        let profiles = extension_histogram_profiles(&dna, &ctx);
+        assert!(!profiles.is_empty());
+    }
+
+    #[test]
+    fn extension_histogram_profiles_zero_count_ignored() {
+        let mut h = HashMap::new();
+        h.insert("go".into(), 0);
+        let dna = RepoDna {
+            extension_histogram: h,
+            manifest_hits: vec![],
+            debt: TechnicalDebtHints::default(),
+            dominant_languages: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
+        };
+        let ctx = ScanContext {
+            ext_counts: &dna.extension_histogram,
+            manifest_hits: &dna.manifest_hits,
+            debt: &dna.debt,
+        };
+        let profiles = extension_histogram_profiles(&dna, &ctx);
+        assert!(profiles.is_empty());
+    }
+
+    #[test]
+    fn repository_analyzer_new() {
+        let analyzer = RepositoryAnalyzer::new(std::path::PathBuf::from("/test/path"));
+        let _ = analyzer;
+    }
+
+    #[test]
+    fn repository_profile_default() {
+        let profile = RepositoryProfile::default();
+        assert!(profile.languages.is_empty());
+        assert!(profile.frameworks.is_empty());
+    }
+
+    #[test]
+    fn technical_debt_hints_default() {
+        let debt = TechnicalDebtHints::default();
+        assert_eq!(debt.todo_markers, 0);
+        assert_eq!(debt.large_files, 0);
+        assert!(!debt.missing_readme);
+        assert!(!debt.missing_license);
+    }
+
+    #[test]
+    fn severity_ordering() {
+        let critical = Severity::Critical;
+        let high = Severity::High;
+        let medium = Severity::Medium;
+        let low = Severity::Low;
+        let info = Severity::Info;
+
+        assert_ne!(critical, high);
+        assert_ne!(high, medium);
+        assert_ne!(medium, low);
+        assert_ne!(low, info);
+        assert_eq!(critical, Severity::Critical);
+    }
+
+    #[test]
+    fn security_issue_serialization() {
+        let issue = SecurityIssue {
+            severity: Severity::High,
+            category: SecurityCategory::HardcodedSecret,
+            file: std::path::PathBuf::from("src/main.rs"),
+            line: Some(10),
+            description: "Test issue".to_string(),
+            suggestion: "Fix it".to_string(),
+        };
+        let json = serde_json::to_string(&issue).unwrap();
+        let deserialized: SecurityIssue = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.severity, Severity::High);
+    }
+
+    #[test]
+    fn code_pattern_serialization() {
+        let pattern = CodePattern {
+            pattern_type: PatternType::LargeFunction,
+            occurrences: 3,
+            files: vec![std::path::PathBuf::from("src/main.rs")],
+            suggestion: "Split function".to_string(),
+        };
+        let json = serde_json::to_string(&pattern).unwrap();
+        let deserialized: CodePattern = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.occurrences, 3);
+    }
+
+    #[test]
+    fn scan_tree_handles_unreadable_file() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("README.md"), "# Test").unwrap();
+        let r = colonize_and_analyze(d.path()).unwrap();
+        assert!(r.dna.extension_histogram.contains_key("md"));
+    }
+
+    #[test]
+    fn deduce_specialists_sorts_by_weight() {
+        let mut h = HashMap::new();
+        h.insert("rs".into(), 5);
+        h.insert("py".into(), 2);
+        let dna = RepoDna {
+            extension_histogram: h,
+            manifest_hits: vec!["Cargo.toml".into()],
+            debt: TechnicalDebtHints::default(),
+            dominant_languages: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
+        };
+        let profiles = deduce_specialists(&dna);
+        assert!(!profiles.is_empty());
+    }
 }

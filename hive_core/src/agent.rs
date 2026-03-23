@@ -1,14 +1,16 @@
-use std::path::PathBuf;
 use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
 use tokio::time::{sleep, Duration};
 
 #[cfg(feature = "multiagent")]
-use std::sync::Arc;
-#[cfg(feature = "multiagent")]
-use crate::blackboard::{FileAction, FileChange, Specialist, Task as BrainTask, TaskStatus as BrainTaskStatus};
+use crate::blackboard::{
+    FileAction, FileChange, Specialist, Task as BrainTask, TaskStatus as BrainTaskStatus,
+};
 #[cfg(feature = "multiagent")]
 use crate::brain::Brain;
+#[cfg(feature = "multiagent")]
+use std::sync::Arc;
 
 fn agent_work_pause() -> Duration {
     if cfg!(test) {
@@ -17,10 +19,10 @@ fn agent_work_pause() -> Duration {
         Duration::from_secs(2)
     }
 }
-use crate::request::HiveWorkMode;
-use crate::work::{TaskStatus, WorkerTask};
 use crate::discovery::RepositoryProfile;
 use crate::git_manager::GitManager;
+use crate::request::HiveWorkMode;
+use crate::work::{TaskStatus, WorkerTask};
 use tracing::info;
 
 /// Represents a worker agent that executes specific tasks
@@ -79,7 +81,10 @@ impl WorkerAgent {
 
     /// Versión síncrona para usar desde spawn_blocking (intenta inferir el código).
     #[cfg(feature = "multiagent")]
-    pub fn generate_code_sync(&self, task_desc: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn generate_code_sync(
+        &self,
+        task_desc: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let spec = match self.task.specialist.language_key.as_str() {
             "rust" => Specialist::Rust,
             "python" => Specialist::Python,
@@ -94,7 +99,10 @@ impl WorkerAgent {
         let prompt = self.build_llm_prompt(task_desc, spec);
 
         if self.brain.is_some() {
-            tracing::debug!(prompt_len = prompt.len(), "Brain disponible; prompt listo (generación async vía execute_task)");
+            tracing::debug!(
+                prompt_len = prompt.len(),
+                "Brain disponible; prompt listo (generación async vía execute_task)"
+            );
         }
 
         // Generar código basado en el prompt (fallback sin LLM real)
@@ -230,7 +238,9 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
             let lower = word.to_lowercase();
             if lower == "function" || lower == "fn" || lower == "func" || lower == "method" {
                 if i + 1 < words.len() {
-                    return words[i + 1].trim_matches(|c| c == '(' || c == ':' || c == '{').to_string();
+                    return words[i + 1]
+                        .trim_matches(|c| c == '(' || c == ':' || c == '{')
+                        .to_string();
                 }
             }
         }
@@ -263,7 +273,9 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     /// Si hay [`Brain`] (Ollama u otro LLM), genera código vía API y escribe archivos.
     /// Devuelve `Ok(true)` si aplicó al menos un cambio; `Ok(false)` si no hay cerebro o respuesta vacía.
     #[cfg(feature = "multiagent")]
-    async fn try_apply_brain_llm(&mut self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    async fn try_apply_brain_llm(
+        &mut self,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let Some(brain) = self.brain.as_ref() else {
             return Ok(false);
         };
@@ -281,11 +293,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
         let target_file = self.default_llm_target_rel_path();
         let bb_task = BrainTask {
             id: self.task.id,
-            description: format!(
-                "{}\n\n{}",
-                self.task.title,
-                self.task.mission_brief.trim()
-            ),
+            description: format!("{}\n\n{}", self.task.title, self.task.mission_brief.trim()),
             target_file: target_file.clone(),
             specialist_type,
             priority: 2,
@@ -363,7 +371,10 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Executes the assigned task
     pub async fn execute_task(&mut self) -> Result<String, Box<dyn std::error::Error>> {
-        println!("👷 Agent {} starting task: {}", self.task.id, self.task.title);
+        println!(
+            "👷 Agent {} starting task: {}",
+            self.task.id, self.task.title
+        );
         self.status = TaskStatus::InProgress;
 
         if !self.feedback.is_empty() {
@@ -422,7 +433,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
             _ if improve => self.generic_improve_notes().await?,
             _ => self.generic_analysis().await?,
         }
-        
+
         self.status = TaskStatus::Completed;
         Ok(format!("Task {} completed successfully", self.task.id))
     }
@@ -431,7 +442,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     async fn analyze_rust(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🔧 Analyzing Rust codebase...");
         sleep(agent_work_pause()).await;
-        
+
         let cargo_path = self.target_dir.join("Cargo.toml");
         if cargo_path.exists() {
             let lib = self.target_dir.join("src/lib.rs");
@@ -461,7 +472,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
                 self.add_file("src/hive_evolution.rs", &hive_rs)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -469,16 +480,16 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     async fn analyze_python(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🐍 Analyzing Python codebase...");
         sleep(agent_work_pause()).await;
-        
+
         // Add requirements.txt if not present
         let req_path = self.target_dir.join("requirements.txt");
         if !req_path.exists() {
             self.add_file("requirements.txt", "# Python dependencies\n# Auto-generated by The Hive\n\n# Core dependencies\n# Add your project dependencies here\n")?;
         }
-        
+
         // Add .python-version if not present
         self.add_file(".python-version", "3.9\n")?;
-        
+
         Ok(())
     }
 
@@ -486,13 +497,13 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     async fn analyze_javascript(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("📦 Analyzing JavaScript/TypeScript codebase...");
         sleep(agent_work_pause()).await;
-        
+
         // Check for package.json
         let package_path = self.target_dir.join("package.json");
         if !package_path.exists() {
             self.add_file("package.json", "{\n  \"name\": \"project\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Auto-generated by The Hive\",\n  \"main\": \"index.js\",\n  \"scripts\": {\n    \"test\": \"echo \\\"Error: no test specified\\\" && exit 1\"\n  },\n  \"keywords\": [],\n  \"author\": \"\",\n  \"license\": \"ISC\"\n}\n")?;
         }
-        
+
         Ok(())
     }
 
@@ -500,7 +511,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     async fn optimize_framework(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("⚙️  Optimizing framework integration...");
         sleep(agent_work_pause()).await;
-        
+
         // Add framework-specific improvements based on detected frameworks
         for framework in &self.profile.frameworks {
             match framework.as_str() {
@@ -516,7 +527,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -524,10 +535,10 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     async fn address_technical_debt(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🔧 Addressing technical debt...");
         sleep(agent_work_pause()).await;
-        
+
         // Create technical debt resolution report
         self.add_file("TECHNICAL_DEBT_RESOLUTION.md", "# Technical Debt Resolution\n\n## Issues Addressed\n\n1. Removed TODO comments\n2. Fixed deprecated API usage\n3. Improved error handling\n4. Added missing documentation\n\n## Remaining Debt\n\n- None identified at this time\n\n*Resolved by The Hive autonomous development system*\n")?;
-        
+
         Ok(())
     }
 
@@ -535,15 +546,15 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     async fn improve_cicd(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🚀 Improving CI/CD pipelines...");
         sleep(agent_work_pause()).await;
-        
+
         // Create GitHub Actions workflow if not present
         let workflows_dir = self.target_dir.join(".github").join("workflows");
         if !workflows_dir.exists() {
             fs::create_dir_all(&workflows_dir)?;
         }
-        
+
         self.add_file(".github/workflows/ci.yml", "name: CI\n\non:\n  push:\n    branches: [ main ]\n  pull_request:\n    branches: [ main ]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n    - uses: actions/checkout@v3\n    - name: Build\n      run: echo \"Building project...\"\n    - name: Test\n      run: echo \"Running tests...\"\n")?;
-        
+
         Ok(())
     }
 
@@ -551,15 +562,15 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
     async fn enhance_tests(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🧪 Enhancing test coverage...");
         sleep(agent_work_pause()).await;
-        
+
         // Create test directory if not present
         let test_dir = self.target_dir.join("tests");
         if !test_dir.exists() {
             fs::create_dir_all(&test_dir)?;
         }
-        
+
         self.add_file("tests/basic.test.js", "// Basic test file\n// Auto-generated by The Hive\n\ntest('basic test', () => {\n  expect(1 + 1).toBe(2);\n});\n")?;
-        
+
         Ok(())
     }
 
@@ -585,7 +596,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
             );
             self.append_text_file("ANALYSIS_REPORT.md", &block)?;
         }
-        
+
         Ok(())
     }
 
@@ -746,7 +757,10 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
         prev.push_str(&line);
         fs::write(&log, prev)?;
 
-        let marker = format!("- {} · `{}` · worker `{}`\n", self.evolution_stamp, self.task.specialist.language_key, self.task.id);
+        let marker = format!(
+            "- {} · `{}` · worker `{}`\n",
+            self.evolution_stamp, self.task.specialist.language_key, self.task.id
+        );
         self.append_text_file("EVOLUTION.md", &marker)?;
         Ok(())
     }
@@ -773,7 +787,11 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
         Ok(())
     }
 
-    fn append_text_file(&self, relative_path: &str, block: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn append_text_file(
+        &self,
+        relative_path: &str,
+        block: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let file_path = self.target_dir.join(relative_path);
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent)?;
@@ -791,17 +809,21 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     /// Helper method to add a file
-    fn add_file(&self, relative_path: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn add_file(
+        &self,
+        relative_path: &str,
+        content: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let file_path = self.target_dir.join(relative_path);
-        
+
         // Create parent directories if needed
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         let mut file = fs::File::create(&file_path)?;
         file.write_all(content.as_bytes())?;
-        
+
         println!("📝 Created/updated file: {}", relative_path);
         Ok(())
     }
@@ -839,13 +861,13 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::request::HiveWorkMode;
-    use crate::work::{TaskStatus, WorkerBranchMode, WorkerTask};
     use crate::discovery::{RepositoryProfile, SpecialistProfile, TechnicalDebtHints};
     use crate::git_manager::GitManager;
+    use crate::request::HiveWorkMode;
+    use crate::work::{TaskStatus, WorkerBranchMode, WorkerTask};
     use tempfile::TempDir;
     use uuid::Uuid;
-    
+
     #[test]
     fn test_agent_creation() {
         let temp_dir = TempDir::new().unwrap();
@@ -864,7 +886,7 @@ mod tests {
             mission_brief: String::new(),
             work_mode: HiveWorkMode::Build,
         };
-        
+
         let profile = RepositoryProfile {
             languages: vec!["Rust".to_string()],
             frameworks: vec![],
@@ -873,14 +895,14 @@ mod tests {
             security_issues: vec![],
             code_patterns: vec![],
         };
-        
+
         let agent = WorkerAgent::new(
             task,
             temp_dir.path().to_path_buf(),
             profile,
             GitManager::new(),
         );
-        
+
         assert_eq!(agent.status, TaskStatus::Pending);
     }
 
@@ -910,7 +932,8 @@ mod tests {
             security_issues: vec![],
             code_patterns: vec![],
         };
-        let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
+        let mut agent =
+            WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
         agent.mark_as_under_review();
         assert_eq!(agent.status, TaskStatus::UnderReview);
         agent.mark_as_needs_revision(vec!["fb".into()]);
@@ -948,7 +971,8 @@ mod tests {
             security_issues: vec![],
             code_patterns: vec![],
         };
-        let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
+        let mut agent =
+            WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
         let msg = agent.execute_task().await.expect("execute");
         assert!(msg.contains("completed"));
         assert_eq!(agent.status, TaskStatus::Completed);
@@ -981,95 +1005,140 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
+            let mut agent =
+                WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
             agent.execute_task().await.expect(key);
         });
     }
 
     #[test]
     fn execute_task_rust_python_js_and_specialists() {
-        run_execute_case("rust", RepositoryProfile {
-            languages: vec!["rust".into()],
-            frameworks: vec![],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |p| {
-            std::fs::write(p.join("Cargo.toml"), "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n").unwrap();
-        });
-        run_execute_case("python", RepositoryProfile {
-            languages: vec!["py".into()],
-            frameworks: vec![],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("javascript", RepositoryProfile {
-            languages: vec!["js".into()],
-            frameworks: vec![],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("typescript", RepositoryProfile {
-            languages: vec!["ts".into()],
-            frameworks: vec![],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("framework_specialist", RepositoryProfile {
-            languages: vec![],
-            frameworks: vec!["react".into()],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("framework_specialist", RepositoryProfile {
-            languages: vec![],
-            frameworks: vec!["Vue".into()],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("framework_specialist", RepositoryProfile {
-            languages: vec![],
-            frameworks: vec!["Svelte".into()],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("debt_specialist", RepositoryProfile {
-            languages: vec![],
-            frameworks: vec![],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("cicd_engineer", RepositoryProfile {
-            languages: vec![],
-            frameworks: vec![],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
-        run_execute_case("test_engineer", RepositoryProfile {
-            languages: vec![],
-            frameworks: vec![],
-            technical_debt: TechnicalDebtHints::default(),
-            specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        }, |_| {});
+        run_execute_case(
+            "rust",
+            RepositoryProfile {
+                languages: vec!["rust".into()],
+                frameworks: vec![],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |p| {
+                std::fs::write(
+                    p.join("Cargo.toml"),
+                    "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+                )
+                .unwrap();
+            },
+        );
+        run_execute_case(
+            "python",
+            RepositoryProfile {
+                languages: vec!["py".into()],
+                frameworks: vec![],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "javascript",
+            RepositoryProfile {
+                languages: vec!["js".into()],
+                frameworks: vec![],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "typescript",
+            RepositoryProfile {
+                languages: vec!["ts".into()],
+                frameworks: vec![],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "framework_specialist",
+            RepositoryProfile {
+                languages: vec![],
+                frameworks: vec!["react".into()],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "framework_specialist",
+            RepositoryProfile {
+                languages: vec![],
+                frameworks: vec!["Vue".into()],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "framework_specialist",
+            RepositoryProfile {
+                languages: vec![],
+                frameworks: vec!["Svelte".into()],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "debt_specialist",
+            RepositoryProfile {
+                languages: vec![],
+                frameworks: vec![],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "cicd_engineer",
+            RepositoryProfile {
+                languages: vec![],
+                frameworks: vec![],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
+        run_execute_case(
+            "test_engineer",
+            RepositoryProfile {
+                languages: vec![],
+                frameworks: vec![],
+                technical_debt: TechnicalDebtHints::default(),
+                specialists: vec![],
+                security_issues: vec![],
+                code_patterns: vec![],
+            },
+            |_| {},
+        );
     }
 
     fn task_improve(key: &str) -> WorkerTask {
@@ -1143,9 +1212,9 @@ mod tests {
                 frameworks,
                 technical_debt: TechnicalDebtHints::default(),
                 specialists: vec![],
-            security_issues: vec![],
-            code_patterns: vec![],
-        };
+                security_issues: vec![],
+                code_patterns: vec![],
+            };
             let mut agent = WorkerAgent::with_evolution(
                 task_improve(key),
                 tmp.path().to_path_buf(),

@@ -1,4 +1,4 @@
-# CI: tests en Ubuntu y macOS; cobertura de líneas ≥ 95 % con llvm-cov en Ubuntu.
+# CI: fmt + clippy, tests en Ubuntu/macOS; cobertura de líneas ≥ 95 % (excluye binario y módulos git CLI).
 name: CI
 
 on:
@@ -51,15 +51,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgit2-dev libssl-dev pkg-config cmake llvm
 
+      - name: cargo fmt (--check)
+        working-directory: ${{ steps.crate.outputs.root }}
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (-D warnings)
+        working-directory: ${{ steps.crate.outputs.root }}
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: cargo test
         working-directory: ${{ steps.crate.outputs.root }}
         run: cargo test --verbose
 
-      - name: Cobertura de líneas (≥ 95 %, excluye src/main.rs)
+      # Excluye: main (CLI), sequential_merger (merge git2 de bajo nivel), worktree_manager (git worktree vía subprocess).
+      - name: Cobertura de líneas (≥ 95 %)
         working-directory: ${{ steps.crate.outputs.root }}
         run: |
           cargo llvm-cov test \
             --fail-under-lines 95 \
-            --ignore-filename-regex '^(.*/)?src/main\.rs$' \
+            --ignore-filename-regex '^(.*/)?src/(main|sequential_merger|worktree_manager)\.rs$' \
             --summary-only \
             --color always

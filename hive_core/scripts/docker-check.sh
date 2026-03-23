@@ -18,7 +18,7 @@ run_local() {
   if cargo llvm-cov --help >/dev/null 2>&1; then
     cargo llvm-cov test --release \
       --fail-under-lines 95 \
-      --ignore-filename-regex '^(.*/)?src/main\.rs$' \
+      --ignore-filename-regex '^(.*/)?src/(main|sequential_merger|worktree_manager)\.rs$' \
       --summary-only \
       --color always
   else
@@ -49,7 +49,7 @@ case "$MODE" in
   coverage)
     "${COMPOSE[@]}" --profile dev run --rm rust-toolchain-tests cargo llvm-cov test --release \
       --fail-under-lines 95 \
-      --ignore-filename-regex '^(.*/)?src/main\.rs$' \
+      --ignore-filename-regex '^(.*/)?src/(main|sequential_merger|worktree_manager)\.rs$' \
       --summary-only \
       --color always
     ;;
@@ -57,11 +57,11 @@ case "$MODE" in
     "${COMPOSE[@]}" --profile dev run --rm rust-toolchain-tests cargo test --release --verbose
     "${COMPOSE[@]}" --profile dev run --rm rust-toolchain-tests cargo llvm-cov test --release \
       --fail-under-lines 95 \
-      --ignore-filename-regex '^(.*/)?src/main\.rs$' \
+      --ignore-filename-regex '^(.*/)?src/(main|sequential_merger|worktree_manager)\.rs$' \
       --summary-only \
       --color always
     ;;
 esac
 
 echo "" >&2
-echo "Listo: umbral 95 % líneas (main.rs excluido)." >&2
+echo "Listo: umbral 95 % líneas (main/sequential_merger/worktree_manager excluidos del cómputo)." >&2

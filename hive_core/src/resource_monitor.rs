@@ -205,4 +205,21 @@ mod tests {
         assert!(n >= 1);
         assert!(n <= 10);
     }
+
+    #[test]
+    fn resource_monitor_default() {
+        let m = ResourceMonitor::default();
+        assert_eq!(m.max_agents, 10);
+    }
+
+    #[test]
+    fn memory_info_debug() {
+        let mem = MemoryInfo {
+            total: 1000,
+            used: 400,
+            free: 600,
+        };
+        let debug = format!("{:?}", mem);
+        assert!(debug.contains("total"));
+    }
 }

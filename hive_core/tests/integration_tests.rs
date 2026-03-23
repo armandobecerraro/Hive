@@ -171,7 +171,7 @@ fn test_strategy_pattern_labels() {
     assert_ne!(rust_agent_type, python_agent_type);
     assert_ne!(rust_agent_type, js_agent_type);
     assert_ne!(python_agent_type, js_agent_type);
-    let agent_types = vec![rust_agent_type, python_agent_type, js_agent_type];
+    let agent_types = [rust_agent_type, python_agent_type, js_agent_type];
     assert_eq!(agent_types.len(), 3);
 }
 
@@ -214,4 +214,46 @@ fn test_orphan_branch_naming_convention() {
         assert!(branch_name.starts_with("task/"));
         assert!(!branch_name.contains("main"));
     }
+}
+
+/// Ejercita APIs públicas adicionales (dashboard, router, priorizador) para cobertura de integración.
+#[tokio::test]
+async fn test_api_publica_dashboard_model_router_y_prioritizer() {
+    use hive_core::dashboard::{HiveDashboard, QualityMetrics, WorkerState};
+    use hive_core::discovery::TechnicalDebtHints;
+    use hive_core::model_router::{ModelRouter, TaskType};
+    use hive_core::prioritizer::Prioritizer;
+
+    let dash = HiveDashboard::new();
+    let wid = Uuid::new_v4();
+    dash.register_worker(wid, "rust".into()).await;
+    dash.update_worker_status(wid, WorkerState::Working, Some("misión".into()))
+        .await;
+    dash.update_quality_metrics(QualityMetrics {
+        tests_passed: 10,
+        tests_failed: 1,
+        warnings_count: 2,
+        security_issues: 0,
+        debt_score: 7.5,
+    })
+    .await;
+    let txt = dash.format_status(2, 1, 3).await;
+    assert!(txt.contains("THE HIVE"));
+    assert!(txt.contains("misión"));
+
+    let router = ModelRouter::new();
+    let _ = router.route(TaskType::CodeReview);
+    let _ = router.route(TaskType::TestGeneration);
+    let _ = router.route(TaskType::DebtAnalysis);
+
+    let p = Prioritizer::new();
+    let debt = TechnicalDebtHints {
+        todo_markers: 0,
+        large_files: 0,
+        missing_readme: true,
+        missing_license: true,
+        sparse_tests: false,
+    };
+    let scores = p.prioritize_debt_tasks(&debt);
+    assert!(!scores.is_empty());
 }

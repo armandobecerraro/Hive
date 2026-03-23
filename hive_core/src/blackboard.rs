@@ -1,5 +1,5 @@
 //! # Blackboard - Shared State for Multi-Agent System
-//! 
+//!
 //! El Blackboard es la fuente de verdad compartida:
 //! - Almacena tareas pendientes
 //! - Registra resultados de tareas completadas
@@ -51,12 +51,12 @@ impl std::fmt::Display for Specialist {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: Uuid,
-    pub description: String,           // "Crear función foo() en bar.rs"
-    pub target_file: PathBuf,          // "src/bar.rs"
-    pub specialist_type: Specialist,    // rust, python, test, etc.
-    pub priority: u8,                  // 1 = alta, 5 = baja
-    pub dependencies: Vec<Uuid>,       // Tasks que deben completar primero
-    pub created_by: Uuid,             // Agente que creó esta tarea
+    pub description: String,         // "Crear función foo() en bar.rs"
+    pub target_file: PathBuf,        // "src/bar.rs"
+    pub specialist_type: Specialist, // rust, python, test, etc.
+    pub priority: u8,                // 1 = alta, 5 = baja
+    pub dependencies: Vec<Uuid>,     // Tasks que deben completar primero
+    pub created_by: Uuid,            // Agente que creó esta tarea
     #[serde(default)]
     pub status: TaskStatus,
 }
@@ -113,9 +113,17 @@ pub enum WorkerEvent {
     #[serde(rename = "task_claimed")]
     TaskClaimed { task_id: Uuid, worker_id: Uuid },
     #[serde(rename = "task_completed")]
-    TaskCompleted { task_id: Uuid, worker_id: Uuid, success: bool },
+    TaskCompleted {
+        task_id: Uuid,
+        worker_id: Uuid,
+        success: bool,
+    },
     #[serde(rename = "task_failed")]
-    TaskFailed { task_id: Uuid, worker_id: Uuid, reason: String },
+    TaskFailed {
+        task_id: Uuid,
+        worker_id: Uuid,
+        reason: String,
+    },
     #[serde(rename = "merge_completed")]
     MergeCompleted { branch: String, success: bool },
     /// Mensaje directo entre obreras
@@ -211,17 +219,17 @@ impl Blackboard {
             message_tx,
         }
     }
-    
+
     /// Subscribe a observer (e.g., Queen Brain)
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<WorkerEvent> {
         self.event_tx.subscribe()
     }
-    
+
     /// Suscribirse a mensajes entre obreras
     pub fn subscribe_messages(&self) -> tokio::sync::broadcast::Receiver<WorkerMessage> {
         self.message_tx.subscribe()
     }
-    
+
     /// Agrega una tarea al blackboard
     pub async fn add_task(&self, task: Task) -> Result<(), anyhow::Error> {
         // Check dependencies are met
@@ -237,27 +245,34 @@ impl Blackboard {
                 }
             }
         }
-        
+
         self.pending_tasks.write().await.push(task.clone());
-        
+
         // Notify observers
-        let _ = self.event_tx.send(WorkerEvent::TaskCreated { task: task.clone() });
-        
+        let _ = self
+            .event_tx
+            .send(WorkerEvent::TaskCreated { task: task.clone() });
+
         tracing::debug!(task_id = %task.id, "Task added to blackboard");
         Ok(())
     }
-    
+
     /// Claim una tarea (worker la toma para procesar)
-    pub async fn claim_task(&self, worker_id: Uuid, specialist: &Specialist) -> Result<Option<Task>, anyhow::Error> {
+    pub async fn claim_task(
+        &self,
+        worker_id: Uuid,
+        specialist: &Specialist,
+    ) -> Result<Option<Task>, anyhow::Error> {
         let mut pending = self.pending_tasks.write().await;
-        
+
         // Find a suitable task
-        if let Some(pos) = pending.iter().position(|t| {
-            t.specialist_type == *specialist && t.status == TaskStatus::Pending
-        }) {
+        if let Some(pos) = pending
+            .iter()
+            .position(|t| t.specialist_type == *specialist && t.status == TaskStatus::Pending)
+        {
             let task = pending.remove(pos);
             let task_id = task.id;
-            
+
             // Mark as in progress
             drop(pending);
             let mut in_progress = self.in_progress_tasks.write().await;
@@ -267,38 +282,37 @@ impl Blackboard {
             };
             in_progress.insert(task_id, task_with_status);
             drop(in_progress);
-            
+
             // Notify observers
-            let _ = self.event_tx.send(WorkerEvent::TaskClaimed {
-                task_id,
-                worker_id,
-            });
-            
+            let _ = self
+                .event_tx
+                .send(WorkerEvent::TaskClaimed { task_id, worker_id });
+
             tracing::info!(task_id = %task_id, worker_id = %worker_id, "Task claimed");
             Ok(Some(task))
         } else {
             Ok(None) // No suitable task
         }
     }
-    
+
     /// Complete una tarea
     pub async fn complete_task(&self, result: TaskResult) -> Result<(), anyhow::Error> {
         let task_id = result.task_id;
         let worker_id = result.worker_id;
         let success = result.success;
-        
+
         // Remove from in_progress
         {
             let mut in_progress = self.in_progress_tasks.write().await;
             in_progress.remove(&task_id);
         }
-        
+
         // Add to completed
         if success {
             let mut completed = self.completed_tasks.write().await;
             completed.insert(task_id, result.clone());
         }
-        
+
         // Notify observers
         if success {
             let _ = self.event_tx.send(WorkerEvent::TaskCompleted {
@@ -313,22 +327,22 @@ impl Blackboard {
                 reason: result.error.clone().unwrap_or_default(),
             });
         }
-        
+
         tracing::info!(task_id = %task_id, success, "Task completed");
         Ok(())
     }
-    
+
     /// Enviar mensaje a otra obrera o broadcast
     pub async fn send_message(&self, msg: WorkerMessage) -> Result<(), anyhow::Error> {
         // Almacenar mensaje
         self.messages.write().await.push(msg.clone());
-        
+
         // Broadcast a suscriptores
         let _ = self.message_tx.send(msg);
-        
+
         Ok(())
     }
-    
+
     /// Obtener mensajes recientes (últimos N)
     pub async fn get_recent_messages(&self, limit: usize) -> Vec<WorkerMessage> {
         let messages = self.messages.read().await;
@@ -339,7 +353,7 @@ impl Blackboard {
         };
         messages[start..].to_vec()
     }
-    
+
     /// Registrar cambios realizados por un especialista
     pub async fn record_specialist_change(
         &self,
@@ -350,14 +364,14 @@ impl Blackboard {
         worker_id: Uuid,
     ) -> Result<(), anyhow::Error> {
         let mut history = self.specialist_history.write().await;
-        let entry = history.entry(specialist_key.to_string()).or_insert_with(|| {
-            SpecialistHistory {
+        let entry = history
+            .entry(specialist_key.to_string())
+            .or_insert_with(|| SpecialistHistory {
                 specialist_key: specialist_key.to_string(),
                 changes: Vec::new(),
                 last_updated: chrono::Utc::now().timestamp(),
-            }
-        });
-        
+            });
+
         entry.changes.push(ChangeRecord {
             file,
             action,
@@ -366,21 +380,21 @@ impl Blackboard {
             timestamp: chrono::Utc::now().timestamp(),
         });
         entry.last_updated = chrono::Utc::now().timestamp();
-        
+
         // Mantener solo los últimos 100 cambios
         if entry.changes.len() > 100 {
             entry.changes.drain(0..entry.changes.len() - 100);
         }
-        
+
         Ok(())
     }
-    
+
     /// Obtener contexto compartido para una obrera
     pub async fn get_shared_context(&self, _specialist: &Specialist) -> SharedContext {
         let history = self.specialist_history.read().await;
         let messages = self.messages.read().await;
         let in_progress = self.in_progress_tasks.read().await;
-        
+
         // Recopilar cambios recientes de todos los especialistas
         let mut recent_changes: Vec<ChangeRecord> = Vec::new();
         for h in history.values() {
@@ -388,24 +402,27 @@ impl Blackboard {
         }
         recent_changes.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         recent_changes.truncate(50); // Solo los 50 más recientes
-        
+
         // Especialistas activos
-        let active_specialists: Vec<String> = in_progress.values()
+        let active_specialists: Vec<String> = in_progress
+            .values()
             .map(|t| format!("{:?}", t.specialist_type))
             .collect();
-        
+
         // Advertencias de mensajes recientes
-        let warnings: Vec<String> = messages.iter()
+        let warnings: Vec<String> = messages
+            .iter()
             .filter(|m| matches!(m.message_type, MessageType::ConflictWarning))
             .map(|m| m.content.clone())
             .collect();
-        
+
         // Sugerencias
-        let suggestions: Vec<String> = messages.iter()
+        let suggestions: Vec<String> = messages
+            .iter()
             .filter(|m| matches!(m.message_type, MessageType::Suggestion))
             .map(|m| m.content.clone())
             .collect();
-        
+
         SharedContext {
             recent_changes,
             active_specialists,
@@ -413,54 +430,58 @@ impl Blackboard {
             suggestions,
         }
     }
-    
+
     /// Obtener historial de un especialista específico
     pub async fn get_specialist_history(&self, specialist_key: &str) -> Option<SpecialistHistory> {
-        self.specialist_history.read().await.get(specialist_key).cloned()
+        self.specialist_history
+            .read()
+            .await
+            .get(specialist_key)
+            .cloned()
     }
-    
+
     /// Get pending tasks count
     pub async fn pending_count(&self) -> usize {
         self.pending_tasks.read().await.len()
     }
-    
+
     /// Get in progress tasks count
     pub async fn in_progress_count(&self) -> usize {
         self.in_progress_tasks.read().await.len()
     }
-    
+
     /// Get completed tasks count
     pub async fn completed_count(&self) -> usize {
         self.completed_tasks.read().await.len()
     }
-    
+
     /// Get all pending tasks (for inspection)
     pub async fn get_pending_tasks(&self) -> Vec<Task> {
         self.pending_tasks.read().await.clone()
     }
-    
+
     /// Get context for a task (completed tasks that might be relevant)
     pub async fn get_context(&self, task: &Task) -> Vec<TaskResult> {
         let completed = self.completed_tasks.read().await;
         let mut context: Vec<TaskResult> = completed.values().cloned().collect();
-        
+
         // Filter to only relevant tasks (same file or dependencies)
         context.retain(|r| {
             // Keep tasks that share dependencies or target files
-            task.dependencies.contains(&r.task_id) ||
-            r.changes.iter().any(|c| c.path == task.target_file)
+            task.dependencies.contains(&r.task_id)
+                || r.changes.iter().any(|c| c.path == task.target_file)
         });
-        
+
         context
     }
-    
+
     /// Clear all completed tasks (for reset)
     pub async fn clear_completed(&self) {
         let mut completed = self.completed_tasks.write().await;
         completed.clear();
         tracing::debug!("Cleared completed tasks");
     }
-    
+
     /// Get statistics
     pub async fn stats(&self) -> BlackboardStats {
         BlackboardStats {
@@ -491,11 +512,11 @@ impl Default for Blackboard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_add_and_claim_task() {
         let bb = Blackboard::new();
-        
+
         let task = Task {
             id: Uuid::new_v4(),
             description: "Test task".to_string(),
@@ -506,21 +527,21 @@ mod tests {
             created_by: Uuid::nil(),
             status: TaskStatus::Pending,
         };
-        
+
         bb.add_task(task.clone()).await.unwrap();
-        
+
         let worker_id = Uuid::new_v4();
         let claimed = bb.claim_task(worker_id, &Specialist::Rust).await.unwrap();
-        
+
         assert!(claimed.is_some());
         assert_eq!(bb.pending_count().await, 0);
     }
-    
+
     #[tokio::test]
     async fn test_subscribe() {
         let bb = Blackboard::new();
         let mut rx = bb.subscribe();
-        
+
         let task = Task {
             id: Uuid::new_v4(),
             description: "Test".to_string(),
@@ -531,21 +552,21 @@ mod tests {
             created_by: Uuid::nil(),
             status: TaskStatus::Pending,
         };
-        
+
         bb.add_task(task).await.unwrap();
-        
+
         let event = rx.recv().await.unwrap();
         match event {
-            WorkerEvent::TaskCreated { .. } => {},
+            WorkerEvent::TaskCreated { .. } => {}
             _ => panic!("Expected TaskCreated"),
         }
     }
-    
+
     #[tokio::test]
     async fn test_inter_worker_messaging() {
         let bb = Blackboard::new();
         let mut rx = bb.subscribe_messages();
-        
+
         let msg = WorkerMessage {
             from_worker: Uuid::new_v4(),
             from_specialist: Specialist::Rust,
@@ -555,42 +576,46 @@ mod tests {
             related_files: vec![PathBuf::from("src/main.rs")],
             timestamp: chrono::Utc::now().timestamp(),
         };
-        
+
         bb.send_message(msg.clone()).await.unwrap();
-        
+
         let received = rx.recv().await.unwrap();
         assert_eq!(received.content, "Completé los cambios en main.rs");
     }
-    
+
     #[tokio::test]
     async fn test_specialist_history() {
         let bb = Blackboard::new();
-        
+
         bb.record_specialist_change(
             "rust",
             PathBuf::from("src/main.rs"),
             FileAction::Modify,
             "Añadida función foo()".to_string(),
             Uuid::new_v4(),
-        ).await.unwrap();
-        
+        )
+        .await
+        .unwrap();
+
         let history = bb.get_specialist_history("rust").await.unwrap();
         assert_eq!(history.changes.len(), 1);
         assert_eq!(history.changes[0].description, "Añadida función foo()");
     }
-    
+
     #[tokio::test]
     async fn test_shared_context() {
         let bb = Blackboard::new();
-        
+
         bb.record_specialist_change(
             "rust",
             PathBuf::from("src/lib.rs"),
             FileAction::Modify,
             "Refactor".to_string(),
             Uuid::new_v4(),
-        ).await.unwrap();
-        
+        )
+        .await
+        .unwrap();
+
         let ctx = bb.get_shared_context(&Specialist::Python).await;
         assert!(!ctx.recent_changes.is_empty());
     }

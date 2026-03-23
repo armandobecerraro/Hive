@@ -175,4 +175,38 @@ mod tests {
         std::env::remove_var("HIVE_MAINTAINER_REJECT_BEFORE_APPROVE");
         assert_eq!(c.maintainer_reject_before_approve, 2);
     }
+
+    #[test]
+    #[serial]
+    fn from_env_run_tests_before_mr_true() {
+        std::env::set_var("HIVE_RUN_TESTS_BEFORE_MR", "yes");
+        let c = HiveConfig::from_env();
+        std::env::remove_var("HIVE_RUN_TESTS_BEFORE_MR");
+        assert!(c.run_tests_before_mr);
+    }
+
+    #[test]
+    #[serial]
+    fn daemon_from_env_true_yes_variant() {
+        std::env::set_var("HIVE_DAEMON", "YES");
+        assert!(HiveConfig::daemon_from_env());
+        std::env::remove_var("HIVE_DAEMON");
+    }
+
+    #[test]
+    #[serial]
+    fn daemon_from_env_true_lowercase_true() {
+        std::env::set_var("HIVE_DAEMON", "true");
+        assert!(HiveConfig::daemon_from_env());
+        std::env::remove_var("HIVE_DAEMON");
+    }
+
+    #[test]
+    #[serial]
+    fn from_env_run_tests_before_mr_numeric_one() {
+        std::env::set_var("HIVE_RUN_TESTS_BEFORE_MR", "1");
+        let c = HiveConfig::from_env();
+        std::env::remove_var("HIVE_RUN_TESTS_BEFORE_MR");
+        assert!(c.run_tests_before_mr);
+    }
 }

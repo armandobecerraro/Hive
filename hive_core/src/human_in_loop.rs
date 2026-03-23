@@ -401,4 +401,48 @@ mod tests {
         let all = manager.list_all();
         assert!(matches!(all[0].status, ApprovalStatus::AutoApproved { .. }));
     }
+
+    #[test]
+    fn test_approval_request_serialization() {
+        let request = ApprovalRequest {
+            id: Uuid::new_v4(),
+            worker_id: Uuid::new_v4(),
+            branch: "main".into(),
+            title: "Test".into(),
+            reason: ApprovalRequired::SecurityChange { files: vec![] },
+            status: ApprovalStatus::Pending,
+            created_at: 1234567890,
+            expires_at: Some(1234567890),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: ApprovalRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.branch, "main");
+    }
+
+    #[test]
+    fn test_approval_policy_default() {
+        let policy = ApprovalPolicy::default();
+        assert!(policy.require_security_approval);
+        assert!(policy.require_test_removal_approval);
+        assert_eq!(policy.quality_score_threshold, 50);
+        assert_eq!(policy.massive_change_threshold, 20);
+    }
+
+    #[test]
+    fn test_approval_status_equality() {
+        assert_eq!(ApprovalStatus::Pending, ApprovalStatus::Pending);
+        assert_ne!(
+            ApprovalStatus::Pending,
+            ApprovalStatus::Approved {
+                reviewer: "a".into(),
+                timestamp: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_human_approval_manager_new() {
+        let manager = HumanApprovalManager::new(ApprovalPolicy::default());
+        assert!(manager.pending_requests().is_empty());
+    }
 }

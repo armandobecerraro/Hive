@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// Tipo de span (operación)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SpanKind {
     /// Orquestación general
     Orchestrator,
@@ -24,6 +24,19 @@ pub enum SpanKind {
     LLM,
     /// Análisis de código
     Analysis,
+}
+
+impl SpanKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Orchestrator => "Orchestrator",
+            Self::Worker => "Worker",
+            Self::Council => "Council",
+            Self::Git => "Git",
+            Self::LLM => "LLM",
+            Self::Analysis => "Analysis",
+        }
+    }
 }
 
 /// Estado de un span
@@ -123,7 +136,10 @@ impl Trace {
     }
 
     pub fn failed_spans(&self) -> Vec<&TraceSpan> {
-        self.spans.iter().filter(|s| s.status == SpanStatus::Failed).collect()
+        self.spans
+            .iter()
+            .filter(|s| s.status == SpanStatus::Failed)
+            .collect()
     }
 }
 
@@ -253,8 +269,8 @@ mod tests {
         let trace_id = Uuid::new_v4();
         let parent_id = Uuid::new_v4();
 
-        let span = TraceSpan::new(trace_id, SpanKind::Worker, "child".into())
-            .with_parent(parent_id);
+        let span =
+            TraceSpan::new(trace_id, SpanKind::Worker, "child".into()).with_parent(parent_id);
 
         assert_eq!(span.parent_span_id, Some(parent_id));
     }
@@ -324,9 +340,15 @@ mod tests {
         let t1 = store.start_trace("t1".into()).await;
         let t2 = store.start_trace("t2".into()).await;
 
-        store.add_span(t1, TraceSpan::new(t1, SpanKind::Worker, "s1".into())).await;
-        store.add_span(t1, TraceSpan::new(t1, SpanKind::Worker, "s2".into())).await;
-        store.add_span(t2, TraceSpan::new(t2, SpanKind::Worker, "s3".into())).await;
+        store
+            .add_span(t1, TraceSpan::new(t1, SpanKind::Worker, "s1".into()))
+            .await;
+        store
+            .add_span(t1, TraceSpan::new(t1, SpanKind::Worker, "s2".into()))
+            .await;
+        store
+            .add_span(t2, TraceSpan::new(t2, SpanKind::Worker, "s3".into()))
+            .await;
 
         let stats = store.stats().await;
         assert_eq!(stats.total_traces, 2);
@@ -354,5 +376,105 @@ mod tests {
         span.add_attribute("tokens".into(), "1500".into());
 
         assert_eq!(span.attributes.get("model").unwrap(), "gpt-4");
+    }
+
+    #[test]
+    fn test_span_kind_variants() {
+        assert_eq!(SpanKind::Orchestrator.as_str(), "Orchestrator");
+        assert_eq!(SpanKind::Worker.as_str(), "Worker");
+        assert_eq!(SpanKind::Council.as_str(), "Council");
+        assert_eq!(SpanKind::Git.as_str(), "Git");
+        assert_eq!(SpanKind::LLM.as_str(), "LLM");
+        assert_eq!(SpanKind::Analysis.as_str(), "Analysis");
+    }
+
+    #[test]
+    fn test_span_status_variants() {
+        let started = SpanStatus::Started;
+        let completed = SpanStatus::Completed;
+        let failed = SpanStatus::Failed;
+        let cancelled = SpanStatus::Cancelled;
+
+        assert_eq!(started, SpanStatus::Started);
+        assert_eq!(completed, SpanStatus::Completed);
+        assert_eq!(failed, SpanStatus::Failed);
+        assert_eq!(cancelled, SpanStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_trace_total_duration() {
+        let mut trace = Trace::new("test".into());
+        assert!(trace.total_duration_ms().is_none());
+
+        trace.end_time = Some(trace.start_time + 1000);
+        assert_eq!(trace.total_duration_ms(), Some(1000));
+    }
+
+    #[test]
+    fn test_trace_span_serialization() {
+        let trace_id = Uuid::new_v4();
+        let span = TraceSpan::new(trace_id, SpanKind::Worker, "test".into());
+
+        let serialized = serde_json::to_string(&span).unwrap();
+        let deserialized: TraceSpan = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.operation, "test");
+        assert_eq!(deserialized.kind, SpanKind::Worker);
+    }
+
+    #[test]
+    fn test_trace_serialization() {
+        let mut trace = Trace::new("test".into());
+        let span = TraceSpan::new(trace.trace_id, SpanKind::Worker, "step".into());
+        trace.spans.push(span);
+
+        let serialized = serde_json::to_string(&trace).unwrap();
+        let deserialized: Trace = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.name, "test");
+        assert_eq!(deserialized.span_count(), 1);
+    }
+
+    #[test]
+    fn test_trace_stats_default() {
+        let stats = TraceStats {
+            total_traces: 10,
+            total_spans: 50,
+            failed_spans: 2,
+        };
+        assert_eq!(stats.total_traces, 10);
+        assert_eq!(stats.total_spans, 50);
+        assert_eq!(stats.failed_spans, 2);
+    }
+
+    #[tokio::test]
+    async fn test_trace_store_get_nonexistent() {
+        let store = TraceStore::new(100);
+        let trace = store.get_trace(Uuid::new_v4()).await;
+        assert!(trace.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_trace_store_add_span_to_nonexistent() {
+        let store = TraceStore::new(100);
+        let span = TraceSpan::new(Uuid::new_v4(), SpanKind::Worker, "test".into());
+        store.add_span(Uuid::new_v4(), span).await;
+        let stats = store.stats().await;
+        assert_eq!(stats.total_traces, 0);
+    }
+
+    #[test]
+    fn test_trace_span_debug() {
+        let trace_id = Uuid::new_v4();
+        let span = TraceSpan::new(trace_id, SpanKind::LLM, "call".into());
+        let debug_str = format!("{:?}", span);
+        assert!(debug_str.contains("LLM"));
+    }
+
+    #[test]
+    fn test_trace_debug() {
+        let trace = Trace::new("test".into());
+        let debug_str = format!("{:?}", trace);
+        assert!(debug_str.contains("test"));
     }
 }

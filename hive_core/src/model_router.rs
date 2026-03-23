@@ -387,4 +387,33 @@ mod tests {
         assert!((router.total_spent() - expected_spent).abs() < 0.001);
         assert!((router.budget_remaining() - (initial - expected_spent)).abs() < 0.001);
     }
+
+    #[test]
+    fn test_task_type_display() {
+        assert_eq!(format!("{}", TaskType::SecurityAudit), "security_audit");
+        assert_eq!(format!("{}", TaskType::CodeGeneration), "code_generation");
+        assert_eq!(format!("{}", TaskType::General), "general");
+    }
+
+    #[test]
+    fn test_model_config_serialization() {
+        let config = ModelConfig {
+            name: "gpt-4".into(),
+            tier: ModelTier::Premium,
+            context_window: 128_000,
+            cost_per_1k_tokens: 0.015,
+            supports_functions: true,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: ModelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "gpt-4");
+    }
+
+    #[test]
+    fn test_routing_decision_structure() {
+        let router = ModelRouter::new();
+        let decision = router.route(TaskType::CodeReview);
+        assert!(!decision.reason.is_empty());
+        assert!(!decision.model.name.is_empty());
+    }
 }

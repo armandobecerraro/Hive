@@ -63,7 +63,7 @@ pub enum LockResult {
 }
 
 /// Estadísticas del gestor de bloqueos
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LockStats {
     pub total_acquired: u64,
     pub total_released: u64,
@@ -109,7 +109,11 @@ impl FileLockManager {
     ///
     /// # Returns
     /// `LockResult::Acquired` si se obtuvo el bloqueo
-    pub async fn try_acquire(&self, worker_id: Uuid, file_path: &Path) -> Result<LockResult, anyhow::Error> {
+    pub async fn try_acquire(
+        &self,
+        worker_id: Uuid,
+        file_path: &Path,
+    ) -> Result<LockResult, anyhow::Error> {
         let normalized = self.normalize_path(file_path);
 
         // Verificar si es hotspot
@@ -134,12 +138,15 @@ impl FileLockManager {
             if let Some(expires) = existing.expires_at {
                 if chrono::Utc::now().timestamp() > expires {
                     // Bloqueo expirado, tomarlo
-                    locks.insert(normalized.clone(), FileLock {
-                        worker_id,
-                        file_path: normalized,
-                        acquired_at: chrono::Utc::now().timestamp(),
-                        expires_at: None,
-                    });
+                    locks.insert(
+                        normalized.clone(),
+                        FileLock {
+                            worker_id,
+                            file_path: normalized,
+                            acquired_at: chrono::Utc::now().timestamp(),
+                            expires_at: None,
+                        },
+                    );
                     stats.total_acquired += 1;
                     stats.active_locks = locks.len();
                     return Ok(LockResult::Acquired);
@@ -153,12 +160,15 @@ impl FileLockManager {
         }
 
         // Adquirir bloqueo
-        locks.insert(normalized.clone(), FileLock {
-            worker_id,
-            file_path: normalized,
-            acquired_at: chrono::Utc::now().timestamp(),
-            expires_at: None,
-        });
+        locks.insert(
+            normalized.clone(),
+            FileLock {
+                worker_id,
+                file_path: normalized,
+                acquired_at: chrono::Utc::now().timestamp(),
+                expires_at: None,
+            },
+        );
 
         stats.total_acquired += 1;
         stats.active_locks = locks.len();
@@ -279,6 +289,23 @@ impl Default for FileLockManager {
     }
 }
 
+// Helper para tests de stats (debe ir antes del módulo `tests` para clippy).
+#[allow(dead_code)]
+trait UnwrapErrOrConflict {
+    fn unwrap_err_or_conflict(self);
+}
+
+impl UnwrapErrOrConflict for Result<LockResult, anyhow::Error> {
+    fn unwrap_err_or_conflict(self) {
+        match self {
+            Ok(LockResult::AlreadyLocked { .. }) => {}
+            Ok(LockResult::Acquired) => panic!("expected conflict"),
+            Ok(LockResult::NotHotspot) => panic!("expected conflict"),
+            Err(_) => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,9 +359,18 @@ mod tests {
         let worker1 = Uuid::new_v4();
         let worker2 = Uuid::new_v4();
 
-        manager.try_acquire(worker1, Path::new("Cargo.toml")).await.unwrap();
-        manager.try_acquire(worker1, Path::new("README.md")).await.unwrap();
-        manager.try_acquire(worker2, Path::new("version.json")).await.unwrap();
+        manager
+            .try_acquire(worker1, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        manager
+            .try_acquire(worker1, Path::new("README.md"))
+            .await
+            .unwrap();
+        manager
+            .try_acquire(worker2, Path::new("version.json"))
+            .await
+            .unwrap();
 
         let released = manager.release_all(worker1).await;
         assert_eq!(released, 2);
@@ -356,11 +392,17 @@ mod tests {
         let worker = Uuid::new_v4();
 
         // Archivo en la lista custom
-        let result = manager.try_acquire(worker, Path::new("custom_config.yaml")).await.unwrap();
+        let result = manager
+            .try_acquire(worker, Path::new("custom_config.yaml"))
+            .await
+            .unwrap();
         assert_eq!(result, LockResult::Acquired);
 
         // Archivo que NO está en la lista custom
-        let result = manager.try_acquire(worker, Path::new("Cargo.toml")).await.unwrap();
+        let result = manager
+            .try_acquire(worker, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
         assert_eq!(result, LockResult::NotHotspot);
     }
 
@@ -370,8 +412,14 @@ mod tests {
         let worker1 = Uuid::new_v4();
         let worker2 = Uuid::new_v4();
 
-        manager.try_acquire(worker1, Path::new("Cargo.toml")).await.unwrap();
-        manager.try_acquire(worker2, Path::new("Cargo.toml")).await.unwrap_err_or_conflict();
+        manager
+            .try_acquire(worker1, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        manager
+            .try_acquire(worker2, Path::new("Cargo.toml"))
+            .await
+            .unwrap_err_or_conflict();
         manager.release(worker1, Path::new("Cargo.toml")).await;
 
         let stats = manager.get_stats().await;
@@ -390,14 +438,20 @@ mod tests {
         manager.try_acquire(worker1, file).await.unwrap();
 
         // Worker2 intenta con timeout muy corto (debe fallar)
-        let acquired = manager.acquire_with_timeout(worker2, file, 0).await.unwrap();
+        let acquired = manager
+            .acquire_with_timeout(worker2, file, 0)
+            .await
+            .unwrap();
         assert!(!acquired);
 
         // Worker1 libera
         manager.release(worker1, file).await;
 
         // Worker2 ahora puede adquirir inmediatamente
-        let acquired = manager.acquire_with_timeout(worker2, file, 1).await.unwrap();
+        let acquired = manager
+            .acquire_with_timeout(worker2, file, 1)
+            .await
+            .unwrap();
         assert!(acquired);
     }
 
@@ -417,8 +471,14 @@ mod tests {
         let manager = FileLockManager::new();
         let worker = Uuid::new_v4();
 
-        manager.try_acquire(worker, Path::new("Cargo.toml")).await.unwrap();
-        manager.try_acquire(worker, Path::new("README.md")).await.unwrap();
+        manager
+            .try_acquire(worker, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        manager
+            .try_acquire(worker, Path::new("README.md"))
+            .await
+            .unwrap();
 
         let locks = manager.list_locks().await;
         assert_eq!(locks.len(), 2);
@@ -448,21 +508,281 @@ mod tests {
             handle.await.unwrap();
         }
     }
-}
 
-// Helper para el test de stats
-#[allow(dead_code)]
-trait UnwrapErrOrConflict {
-    fn unwrap_err_or_conflict(self);
-}
+    #[test]
+    fn test_file_lock_structure() {
+        let lock = FileLock {
+            worker_id: Uuid::new_v4(),
+            file_path: PathBuf::from("test.txt"),
+            acquired_at: 1234567890,
+            expires_at: Some(1234567900),
+        };
+        assert_eq!(lock.acquired_at, 1234567890);
+        assert!(lock.expires_at.is_some());
+    }
 
-impl UnwrapErrOrConflict for Result<LockResult, anyhow::Error> {
-    fn unwrap_err_or_conflict(self) {
-        match self {
-            Ok(LockResult::AlreadyLocked { .. }) => {}
-            Ok(LockResult::Acquired) => panic!("expected conflict"),
-            Ok(LockResult::NotHotspot) => panic!("expected conflict"),
-            Err(_) => {}
-        }
+    #[test]
+    fn test_lock_stats_default() {
+        let stats = LockStats::default();
+        assert_eq!(stats.total_acquired, 0);
+        assert_eq!(stats.total_released, 0);
+        assert_eq!(stats.total_conflicts, 0);
+        assert_eq!(stats.active_locks, 0);
+        assert_eq!(stats.hotspot_checks, 0);
+    }
+
+    #[tokio::test]
+    async fn test_normalize_path_removes_dot_prefix() {
+        let manager = FileLockManager::new();
+        let normalized = manager.normalize_path(Path::new("./Cargo.toml"));
+        assert_eq!(normalized, PathBuf::from("Cargo.toml"));
+    }
+
+    #[tokio::test]
+    async fn test_normalize_path_preserves_normal() {
+        let manager = FileLockManager::new();
+        let normalized = manager.normalize_path(Path::new("src/main.rs"));
+        assert_eq!(normalized, PathBuf::from("src/main.rs"));
+    }
+
+    #[tokio::test]
+    async fn test_release_nonexistent_lock_returns_false() {
+        let manager = FileLockManager::new();
+        let worker = Uuid::new_v4();
+
+        let result = manager.release(worker, Path::new("Cargo.toml")).await;
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_release_lock_owned_by_other() {
+        let manager = FileLockManager::new();
+        let worker1 = Uuid::new_v4();
+        let worker2 = Uuid::new_v4();
+
+        manager
+            .try_acquire(worker1, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+
+        let result = manager.release(worker2, Path::new("Cargo.toml")).await;
+        assert!(!result);
+        assert!(manager.is_locked(Path::new("Cargo.toml")).await);
+    }
+
+    #[tokio::test]
+    async fn test_get_lock_owner_nonexistent() {
+        let manager = FileLockManager::new();
+        let owner = manager.get_lock_owner(Path::new("Cargo.toml")).await;
+        assert!(owner.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_is_hotspot_directory() {
+        let manager = FileLockManager::new();
+
+        assert!(manager.is_hotspot(Path::new(".github/workflows")));
+        assert!(manager.is_hotspot(Path::new("src/.github/workflows")));
+    }
+
+    #[tokio::test]
+    async fn test_acquire_with_timeout_nonzero() {
+        let manager = FileLockManager::new();
+        let worker = Uuid::new_v4();
+
+        let result = manager
+            .acquire_with_timeout(worker, Path::new("random_file.rs"), 1)
+            .await
+            .unwrap();
+        assert!(result, "Non-hotspot should be acquired immediately");
+    }
+
+    #[test]
+    fn test_default_hotspots_list() {
+        let manager = FileLockManager::new();
+
+        assert!(manager.is_hotspot(Path::new("package.json")));
+        assert!(manager.is_hotspot(Path::new("pyproject.toml")));
+        assert!(manager.is_hotspot(Path::new("requirements.txt")));
+        assert!(manager.is_hotspot(Path::new("pubspec.yaml")));
+        assert!(manager.is_hotspot(Path::new("Dockerfile")));
+        assert!(manager.is_hotspot(Path::new("docker-compose.yml")));
+    }
+
+    #[test]
+    fn test_lock_result_enum() {
+        let acquired = LockResult::Acquired;
+        let not_hotspot = LockResult::NotHotspot;
+        let locked = LockResult::AlreadyLocked {
+            owner: Uuid::new_v4(),
+        };
+
+        assert_eq!(acquired, LockResult::Acquired);
+        assert_eq!(not_hotspot, LockResult::NotHotspot);
+        assert!(matches!(locked, LockResult::AlreadyLocked { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_lock_stats_tracking() {
+        let manager = FileLockManager::new();
+
+        let worker1 = Uuid::new_v4();
+        let worker2 = Uuid::new_v4();
+
+        manager
+            .try_acquire(worker1, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        let result = manager
+            .try_acquire(worker2, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        assert!(matches!(result, LockResult::AlreadyLocked { .. }));
+        manager.release(worker1, Path::new("Cargo.toml")).await;
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.active_locks, 0);
+    }
+
+    #[tokio::test]
+    async fn test_sequential_acquire_same_worker() {
+        let manager = FileLockManager::new();
+        let worker = Uuid::new_v4();
+
+        let r1 = manager
+            .try_acquire(worker, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        assert_eq!(r1, LockResult::Acquired);
+
+        let r2 = manager
+            .try_acquire(worker, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        assert_eq!(r2, LockResult::Acquired, "Same worker can re-acquire");
+    }
+
+    #[tokio::test]
+    async fn test_release_only_owned_lock() {
+        let manager = FileLockManager::new();
+        let worker1 = Uuid::new_v4();
+        let worker2 = Uuid::new_v4();
+
+        manager
+            .try_acquire(worker1, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        let released = manager.release(worker2, Path::new("Cargo.toml")).await;
+
+        assert!(!released);
+        assert!(manager.is_locked(Path::new("Cargo.toml")).await);
+    }
+
+    #[tokio::test]
+    async fn test_acquire_with_timeout_zero() {
+        let manager = FileLockManager::new();
+        let worker = Uuid::new_v4();
+
+        let result = manager
+            .acquire_with_timeout(worker, Path::new("random_file.rs"), 0)
+            .await
+            .unwrap();
+        assert!(
+            !result,
+            "Zero timeout returns false immediately without trying"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_acquire_with_timeout_expired() {
+        let manager = FileLockManager::new();
+        let worker1 = Uuid::new_v4();
+        let worker2 = Uuid::new_v4();
+
+        manager
+            .try_acquire(worker1, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+
+        let result = manager
+            .acquire_with_timeout(worker2, Path::new("Cargo.toml"), 0)
+            .await
+            .unwrap();
+        assert!(!result, "Zero timeout should fail immediately when locked");
+
+        manager.release(worker1, Path::new("Cargo.toml")).await;
+
+        let result2 = manager
+            .acquire_with_timeout(worker2, Path::new("Cargo.toml"), 1)
+            .await
+            .unwrap();
+        assert!(result2, "Should succeed after release");
+    }
+
+    #[tokio::test]
+    async fn test_release_all_multiple_workers() {
+        let manager = FileLockManager::new();
+        let worker1 = Uuid::new_v4();
+        let worker2 = Uuid::new_v4();
+
+        manager
+            .try_acquire(worker1, Path::new("Cargo.toml"))
+            .await
+            .unwrap();
+        manager
+            .try_acquire(worker1, Path::new("README.md"))
+            .await
+            .unwrap();
+        manager
+            .try_acquire(worker1, Path::new("package.json"))
+            .await
+            .unwrap();
+
+        manager
+            .try_acquire(worker2, Path::new("version.json"))
+            .await
+            .unwrap();
+
+        let released = manager.release_all(worker1).await;
+        assert_eq!(released, 3);
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total_released, 3);
+        assert_eq!(stats.active_locks, 1);
+    }
+
+    #[test]
+    fn test_lock_stats_serialization() {
+        let stats = LockStats {
+            total_acquired: 10,
+            total_released: 5,
+            total_conflicts: 3,
+            active_locks: 2,
+            hotspot_checks: 20,
+        };
+        let serialized = serde_json::to_string(&stats).unwrap();
+        let deserialized: LockStats = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.total_acquired, 10);
+        assert_eq!(deserialized.active_locks, 2);
+    }
+
+    #[tokio::test]
+    async fn test_is_hotspot_docker_compose_yaml() {
+        let manager = FileLockManager::new();
+
+        assert!(manager.is_hotspot(Path::new("docker-compose.yaml")));
+        assert!(manager.is_hotspot(Path::new("subdir/docker-compose.yaml")));
+    }
+
+    #[tokio::test]
+    async fn test_get_stats_initial() {
+        let manager = FileLockManager::new();
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total_acquired, 0);
+        assert_eq!(stats.total_released, 0);
+        assert_eq!(stats.total_conflicts, 0);
+        assert_eq!(stats.active_locks, 0);
+        assert_eq!(stats.hotspot_checks, 0);
     }
 }

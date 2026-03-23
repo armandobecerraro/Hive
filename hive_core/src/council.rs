@@ -98,12 +98,12 @@ fn run_tests(repo_root: &Path) -> bool {
     if !repo_root.join("Cargo.toml").exists() {
         return true; // No es un proyecto Rust, no hay tests que ejecutar
     }
-    
+
     let output = std::process::Command::new("cargo")
         .current_dir(repo_root)
         .args(["test", "--quiet", "--no-fail-fast"])
         .output();
-    
+
     match output {
         Ok(out) => out.status.success(),
         Err(_) => true, // Si no se puede ejecutar, asumimos OK
@@ -115,19 +115,17 @@ fn count_warnings(repo_root: &Path) -> u32 {
     if !repo_root.join("Cargo.toml").exists() {
         return 0;
     }
-    
+
     let output = std::process::Command::new("cargo")
         .current_dir(repo_root)
         .args(["clippy", "--quiet", "--", "-W", "clippy::all"])
         .stderr(std::process::Stdio::piped())
         .output();
-    
+
     match output {
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            stderr.lines()
-                .filter(|l| l.contains("warning["))
-                .count() as u32
+            stderr.lines().filter(|l| l.contains("warning[")).count() as u32
         }
         Err(_) => 0,
     }
@@ -139,27 +137,37 @@ fn get_branch_diff_stats(repo_root: &Path, branch: &str) -> (u32, u32, u32) {
         .current_dir(repo_root)
         .args(["diff", "--stat", &format!("main...{branch}")])
         .output();
-    
+
     match output {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let last_line = stdout.lines().last().unwrap_or("");
             // "X files changed, Y insertions(+), Z deletions(-)"
-            let files = last_line.split("file").next()
+            let files = last_line
+                .split("file")
+                .next()
                 .and_then(|s| s.trim().parse().ok())
                 .unwrap_or(0);
             let added = if last_line.contains("insertion") {
-                last_line.split("insertion").next()
+                last_line
+                    .split("insertion")
+                    .next()
                     .and_then(|s| s.split(',').next_back())
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0)
-            } else { 0 };
+            } else {
+                0
+            };
             let removed = if last_line.contains("deletion") {
-                last_line.split("deletion").next()
+                last_line
+                    .split("deletion")
+                    .next()
                     .and_then(|s| s.split(',').next_back())
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0)
-            } else { 0 };
+            } else {
+                0
+            };
             (files, added, removed)
         }
         Err(_) => (0, 0, 0),
@@ -169,31 +177,30 @@ fn get_branch_diff_stats(repo_root: &Path, branch: &str) -> (u32, u32, u32) {
 /// Calcula score de calidad basado en métricas
 fn calculate_quality_score(tests_passed: bool, warnings: u32, files_changed: u32) -> u8 {
     let mut score: i32 = 70; // Base
-    
+
     if tests_passed {
         score += 20;
     } else {
         score -= 30;
     }
-    
+
     // Penalizar warnings
     score -= (warnings as i32) * 2;
-    
+
     // Bonus por cambios moderados (no gigantes)
     if files_changed > 0 && files_changed <= 10 {
         score += 10;
     } else if files_changed > 20 {
         score -= 10;
     }
-    
+
     score.clamp(0, 100) as u8
 }
 
 impl Maintainer {
     pub fn review(&self, attempt: u32, mr: &MergeRequest, repo_root: &Path) -> MaintainerReview {
         // Verificar marcadores de obsolescencia
-        if mr.description.contains("[HIVE_OBSOLETE]")
-            || mr.description.contains("HIVE_MR_NO_RETRY")
+        if mr.description.contains("[HIVE_OBSOLETE]") || mr.description.contains("HIVE_MR_NO_RETRY")
         {
             return MaintainerReview {
                 merge_request_id: mr.id,
@@ -213,7 +220,8 @@ impl Maintainer {
         // Recopilar métricas reales
         let tests_passed = run_tests(repo_root);
         let warnings_count = count_warnings(repo_root);
-        let (files_changed, lines_added, lines_removed) = get_branch_diff_stats(repo_root, &mr.branch);
+        let (files_changed, lines_added, lines_removed) =
+            get_branch_diff_stats(repo_root, &mr.branch);
         let quality_score = calculate_quality_score(tests_passed, warnings_count, files_changed);
 
         let metrics = ReviewMetrics {
@@ -259,7 +267,8 @@ impl Maintainer {
         // Decisión basada en métricas reales
         if !tests_passed {
             comments.push(
-                "[Mantenedor] Rechazo: los tests fallaron. Corrige los tests antes de reenviar.".into(),
+                "[Mantenedor] Rechazo: los tests fallaron. Corrige los tests antes de reenviar."
+                    .into(),
             );
             MaintainerReview {
                 merge_request_id: mr.id,
@@ -290,7 +299,8 @@ impl Maintainer {
             }
         } else if attempt <= self.reject_before_approve {
             comments.push(
-                "[Mantenedor] Rechazo técnico: mejorar calidad del código y mensaje de commit.".into(),
+                "[Mantenedor] Rechazo técnico: mejorar calidad del código y mensaje de commit."
+                    .into(),
             );
             MaintainerReview {
                 merge_request_id: mr.id,
@@ -394,16 +404,17 @@ mod tests {
         };
         let tmp = tempfile::tempdir().unwrap();
         let r = m.review(1, &mr, tmp.path());
-        assert!(
-            r.comments
-                .iter()
-                .any(|c| c.contains("Falta contexto") || c.contains("contexto"))
-        );
+        assert!(r
+            .comments
+            .iter()
+            .any(|c| c.contains("Falta contexto") || c.contains("contexto")));
     }
 
     #[test]
     fn rejection_indicates_obsolete_detecta_frases() {
-        assert!(rejection_indicates_work_obsolete("Ya no se requiere este cambio"));
+        assert!(rejection_indicates_work_obsolete(
+            "Ya no se requiere este cambio"
+        ));
         assert!(rejection_indicates_work_obsolete("NOT NEEDED anymore"));
         assert!(rejection_indicates_work_obsolete("Ya está hecho en main"));
         assert!(rejection_indicates_work_obsolete("duplicate work"));

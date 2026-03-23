@@ -34,7 +34,7 @@ pub struct WorktreeInfo {
 }
 
 /// Estado del gestor de worktrees
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorktreeStats {
     pub total_created: u64,
     pub active_count: usize,
@@ -154,7 +154,9 @@ impl WorktreeManager {
     pub async fn cleanup_worktree(&self, worker_id: Uuid) -> Result<()> {
         let worktree_path = {
             let active = self.active_worktrees.read().await;
-            active.get(&worker_id).map(|info| info.worktree_path.clone())
+            active
+                .get(&worker_id)
+                .map(|info| info.worktree_path.clone())
         };
 
         if let Some(path) = worktree_path {
@@ -216,7 +218,9 @@ impl WorktreeManager {
     /// Obtiene la ruta del worktree de una obrera
     pub async fn get_worktree_path(&self, worker_id: Uuid) -> Option<PathBuf> {
         let active = self.active_worktrees.read().await;
-        active.get(&worker_id).map(|info| info.worktree_path.clone())
+        active
+            .get(&worker_id)
+            .map(|info| info.worktree_path.clone())
     }
 
     /// Verifica si una obrera tiene un worktree activo
@@ -309,14 +313,8 @@ mod tests {
         let tree_id = index.write_tree().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
         let sig = git2::Signature::now("Test", "test@test.com").unwrap();
-        repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            "Initial commit",
-            &tree,
-            &[],
-        ).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+            .unwrap();
 
         // Crear rama main
         let head = repo.head().unwrap().peel_to_commit().unwrap();
@@ -361,7 +359,6 @@ mod tests {
         let manager = WorktreeManager::new(repo_path);
 
         let mut worker_ids = Vec::new();
-        let mut handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
         // Crear 3 worktrees en paralelo
         for _ in 0..3 {
@@ -402,7 +399,10 @@ mod tests {
         let path1 = manager.create_worktree(worker_id, &branch).await.unwrap();
         let path2 = manager.create_worktree(worker_id, &branch).await.unwrap();
 
-        assert_eq!(path1, path2, "crear worktree duplicado debe retornar el existente");
+        assert_eq!(
+            path1, path2,
+            "crear worktree duplicado debe retornar el existente"
+        );
         assert_eq!(manager.get_stats().await.total_created, 1);
     }
 
@@ -457,5 +457,207 @@ mod tests {
         manager.cleanup_worktree(worker_id).await.unwrap();
 
         assert_eq!(manager.get_stats().await.active_count, 0);
+    }
+
+    #[test]
+    fn test_worktree_info_structure() {
+        let info = WorktreeInfo {
+            worker_id: Uuid::new_v4(),
+            branch: "hive/worker/test".into(),
+            worktree_path: PathBuf::from("/tmp/worktree"),
+            created_at: 1234567890,
+            is_active: true,
+        };
+        assert!(info.is_active);
+        assert_eq!(info.branch, "hive/worker/test");
+    }
+
+    #[test]
+    fn test_worktree_stats_default() {
+        let stats = WorktreeStats::default();
+        assert_eq!(stats.total_created, 0);
+        assert_eq!(stats.active_count, 0);
+        assert_eq!(stats.cleaned_count, 0);
+        assert_eq!(stats.failed_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_active_empty() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path);
+
+        let active = manager.list_active().await;
+        assert!(active.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_stats_tracking() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path);
+
+        let worker_id1 = Uuid::new_v4();
+        let worker_id2 = Uuid::new_v4();
+
+        manager
+            .create_worktree(worker_id1, &format!("hive/worker/{}", worker_id1))
+            .await
+            .unwrap();
+        manager
+            .create_worktree(worker_id2, &format!("hive/worker/{}", worker_id2))
+            .await
+            .unwrap();
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total_created, 2);
+        assert_eq!(stats.active_count, 2);
+    }
+
+    #[test]
+    fn test_remove_worktree_internal_fallback() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path);
+
+        let fake_path = PathBuf::from("/nonexistent/path");
+        let result = manager.remove_worktree_internal(&fake_path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_worktree_info_serialization() {
+        let info = WorktreeInfo {
+            worker_id: Uuid::new_v4(),
+            branch: "hive/worker/test".into(),
+            worktree_path: PathBuf::from("/tmp/worktree"),
+            created_at: 1234567890,
+            is_active: true,
+        };
+        let serialized = serde_json::to_string(&info).unwrap();
+        let deserialized: WorktreeInfo = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.branch, "hive/worker/test");
+    }
+
+    #[test]
+    fn test_worktree_stats_serialization() {
+        let stats = WorktreeStats {
+            total_created: 10,
+            active_count: 3,
+            cleaned_count: 7,
+            failed_count: 1,
+        };
+        let serialized = serde_json::to_string(&stats).unwrap();
+        let deserialized: WorktreeStats = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.total_created, 10);
+    }
+
+    #[tokio::test]
+    async fn test_get_worktree_path_existing() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path.clone());
+
+        let worker_id = Uuid::new_v4();
+        let branch = format!("hive/worker/{}", worker_id);
+
+        let path = manager.create_worktree(worker_id, &branch).await.unwrap();
+        let retrieved = manager.get_worktree_path(worker_id).await;
+
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap(), path);
+    }
+
+    #[tokio::test]
+    async fn test_get_worktree_path_nonexistent() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path);
+
+        let retrieved = manager.get_worktree_path(Uuid::new_v4()).await;
+        assert!(retrieved.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_worktree_manager_new() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path.clone());
+
+        assert_eq!(manager.repo_root, repo_path);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_orphaned_no_workers_dir() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path);
+
+        let result = manager.cleanup_orphaned_on_disk();
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_worktree_manager_creates_workers_dir() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let _manager = WorktreeManager::new(repo_path.clone());
+
+        assert!(repo_path
+            .join(".hive")
+            .join("workers")
+            .to_string_lossy()
+            .contains(".hive"));
+    }
+
+    #[test]
+    fn test_worktree_stats_serialization_roundtrip() {
+        let stats = WorktreeStats {
+            total_created: 5,
+            active_count: 2,
+            cleaned_count: 3,
+            failed_count: 0,
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        let deserialized: WorktreeStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.total_created, 5);
+        assert_eq!(deserialized.active_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_active_after_creates() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path);
+
+        let worker_id = Uuid::new_v4();
+        let branch = format!("hive/worker/{}", worker_id);
+
+        manager.create_worktree(worker_id, &branch).await.unwrap();
+
+        let active = manager.list_active().await;
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].worker_id, worker_id);
+        assert_eq!(active[0].branch, branch);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_nonexistent_worktree() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path);
+
+        let unknown_id = Uuid::new_v4();
+        let result = manager.cleanup_worktree(unknown_id).await;
+        assert!(result.is_ok());
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.cleaned_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_worktree_path_stores_short_uuid() {
+        let (_tmp, repo_path) = setup_test_repo();
+        let manager = WorktreeManager::new(repo_path.clone());
+
+        let worker_id = Uuid::new_v4();
+        let branch = format!("hive/worker/{}", worker_id);
+
+        let path = manager.create_worktree(worker_id, &branch).await.unwrap();
+        let short_uuid = &worker_id.to_string()[..8];
+
+        assert!(path
+            .to_string_lossy()
+            .contains(&format!("worker-{}", short_uuid)));
     }
 }

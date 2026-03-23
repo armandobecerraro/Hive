@@ -257,4 +257,71 @@ mod tests {
             .iter()
             .any(|s| s.reasons.iter().any(|r| r.contains("escasos"))));
     }
+
+    #[test]
+    fn prioriza_todas_las_categorias_de_seguridad() {
+        let p = Prioritizer::new();
+        let cats = [
+            SecurityCategory::HardcodedSecret,
+            SecurityCategory::UnsafeCode,
+            SecurityCategory::SqlInjection,
+            SecurityCategory::CommandInjection,
+            SecurityCategory::PathTraversal,
+            SecurityCategory::InsecureDeserialization,
+            SecurityCategory::WeakCrypto,
+            SecurityCategory::MissingValidation,
+            SecurityCategory::ExposedDebug,
+            SecurityCategory::OutdatedDependency,
+        ];
+        for cat in cats {
+            let issues = vec![SecurityIssue {
+                severity: Severity::Medium,
+                category: cat.clone(),
+                file: std::path::PathBuf::from("src/x.rs"),
+                line: Some(1),
+                description: "test".into(),
+                suggestion: "fix".into(),
+            }];
+            let scores = p.prioritize_security_tasks(&issues);
+            assert_eq!(scores.len(), 1, "{cat:?}");
+        }
+    }
+
+    #[test]
+    fn prioriza_todos_los_tipos_de_patron() {
+        let p = Prioritizer::new();
+        for pt in [
+            PatternType::LargeFunction,
+            PatternType::DuplicatedCode,
+            PatternType::GodClass,
+            PatternType::DeepNesting,
+            PatternType::MagicNumber,
+            PatternType::LongParameterList,
+            PatternType::EmptyCatch,
+            PatternType::TodoFixme,
+        ] {
+            let patterns = vec![CodePattern {
+                pattern_type: pt.clone(),
+                occurrences: 4,
+                files: vec![std::path::PathBuf::from("a.rs")],
+                suggestion: "s".into(),
+            }];
+            let scores = p.prioritize_pattern_tasks(&patterns);
+            assert_eq!(scores.len(), 1, "{pt:?}");
+        }
+    }
+
+    #[test]
+    fn prioriza_deuda_sin_todo_marker_masivo() {
+        let p = Prioritizer::new();
+        let debt = TechnicalDebtHints {
+            todo_markers: 3,
+            large_files: 0,
+            missing_readme: false,
+            missing_license: false,
+            sparse_tests: false,
+        };
+        let scores = p.prioritize_debt_tasks(&debt);
+        assert!(scores.is_empty());
+    }
 }

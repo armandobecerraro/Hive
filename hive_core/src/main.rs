@@ -36,27 +36,21 @@ fn parse_cli() -> Result<Cli> {
             "--daemon" | "-d" => daemon = true,
             "--once" => daemon = false,
             "--health" => {
-                let p = args
-                    .next()
-                    .context("falta ruta tras --health")?;
+                let p = args.next().context("falta ruta tras --health")?;
                 health_repo = Some(PathBuf::from(p));
             }
             "--ask" => {
-                let t = args
-                    .next()
-                    .context("falta texto tras --ask")?;
+                let t = args.next().context("falta texto tras --ask")?;
                 ask = Some(t);
             }
             "--revise" => {
-                let t = args
-                    .next()
-                    .context("falta texto tras --revise")?;
+                let t = args.next().context("falta texto tras --revise")?;
                 revise = Some(t);
             }
             "--stack" => {
-                let s = args
-                    .next()
-                    .context("falta valor tras --stack (rust_binary|python_app|node_minimal|auto)")?;
+                let s = args.next().context(
+                    "falta valor tras --stack (rust_binary|python_app|node_minimal|auto)",
+                )?;
                 stack = Some(s);
             }
             "--force-scaffold" => force_scaffold = true,
@@ -191,9 +185,9 @@ async fn main() -> Result<()> {
 
     if cli.daemon {
         loop {
-            run_queen_cycle(target.clone(), &cfg)
-                .await
-                .unwrap_or_else(|e| tracing::error!(error = %e, "ciclo falló; reintento tras pausa"));
+            run_queen_cycle(target.clone(), &cfg).await.unwrap_or_else(
+                |e| tracing::error!(error = %e, "ciclo falló; reintento tras pausa"),
+            );
             info!(
                 secs = cfg.poll_interval.as_secs(),
                 "pausa entre ciclos (daemon)"

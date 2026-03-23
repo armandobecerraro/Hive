@@ -926,4 +926,79 @@ mod tests {
         assert_eq!(src, super::ClientFeedbackSource::File);
         std::env::remove_var("HIVE_CLIENT_FEEDBACK");
     }
+
+    #[test]
+    fn derive_title_takes_first_line() {
+        let title = super::derive_title("First line\nSecond line");
+        assert_eq!(title, "First line");
+    }
+
+    #[test]
+    fn derive_title_empty_returns_proyecto() {
+        let title = super::derive_title("");
+        assert_eq!(title, "Proyecto");
+    }
+
+    #[test]
+    fn derive_title_truncates_long_line() {
+        let long_line = "x".repeat(100);
+        let title = super::derive_title(&long_line);
+        assert_eq!(title.len(), 72);
+    }
+
+    #[test]
+    fn parse_stack_auto() {
+        assert_eq!(super::parse_stack("auto"), Some(super::ProjectStack::Auto));
+        assert_eq!(super::parse_stack("AUTO"), Some(super::ProjectStack::Auto));
+    }
+
+    #[test]
+    fn parse_stack_rust() {
+        assert_eq!(
+            super::parse_stack("rust"),
+            Some(super::ProjectStack::RustBinary)
+        );
+        assert_eq!(
+            super::parse_stack("rust_binary"),
+            Some(super::ProjectStack::RustBinary)
+        );
+        assert_eq!(
+            super::parse_stack("RUST"),
+            Some(super::ProjectStack::RustBinary)
+        );
+    }
+
+    #[test]
+    fn parse_stack_python() {
+        assert_eq!(
+            super::parse_stack("python"),
+            Some(super::ProjectStack::PythonApp)
+        );
+        assert_eq!(
+            super::parse_stack("python_app"),
+            Some(super::ProjectStack::PythonApp)
+        );
+    }
+
+    #[test]
+    fn parse_stack_node() {
+        assert_eq!(
+            super::parse_stack("node"),
+            Some(super::ProjectStack::NodeMinimal)
+        );
+        assert_eq!(
+            super::parse_stack("node_minimal"),
+            Some(super::ProjectStack::NodeMinimal)
+        );
+        assert_eq!(
+            super::parse_stack("javascript"),
+            Some(super::ProjectStack::NodeMinimal)
+        );
+    }
+
+    #[test]
+    fn parse_stack_invalid() {
+        assert_eq!(super::parse_stack("invalid"), None);
+        assert_eq!(super::parse_stack(""), None);
+    }
 }

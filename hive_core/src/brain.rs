@@ -1,10 +1,10 @@
 //! # The Brain - LLM-Powered Code Generator
-//! 
+//!
 //! El Cerebro es el componente central que:
 //! - Analiza requerimientos y crea tareas específicas
 //! - Genera código real usando LLM
 //! - Publica tareas al Blackboard para que los Workers las ejecuten
-//! 
+//!
 //! NO envía órdenes directas a workers - solo publica tareas.
 
 use crate::blackboard::{
@@ -71,7 +71,7 @@ impl LLMClient for OllamaClient {
         let url = format!("{}/api/generate", self.base_url);
         let model = self.model.clone();
         let prompt = prompt.to_string();
-        
+
         Box::pin(async move {
             let http = client
                 .post(&url)
@@ -85,18 +85,19 @@ impl LLMClient for OllamaClient {
 
             let status = http.status();
             let body_text = http.text().await.unwrap_or_default();
-            let body: serde_json::Value = serde_json::from_str(&body_text)
-                .map_err(|e| anyhow!("Ollama respuesta no-JSON (HTTP {status}): {e}; cuerpo: {}", trunc_body(&body_text, 300)))?;
+            let body: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
+                anyhow!(
+                    "Ollama respuesta no-JSON (HTTP {status}): {e}; cuerpo: {}",
+                    trunc_body(&body_text, 300)
+                )
+            })?;
 
             if let Some(err) = body.get("error").and_then(|v| v.as_str()) {
                 anyhow::bail!("Ollama API: {err} (modelo `{model}`, HTTP {status})");
             }
 
             if !status.is_success() {
-                anyhow::bail!(
-                    "Ollama HTTP {status}: {}",
-                    trunc_body(&body_text, 500)
-                );
+                anyhow::bail!("Ollama HTTP {status}: {}", trunc_body(&body_text, 500));
             }
 
             match body.get("response").and_then(|v| v.as_str()) {
@@ -130,7 +131,7 @@ impl Brain {
             specialist_type,
         }
     }
-    
+
     /// Analiza el repositorio y genera tareas concretas
     pub async fn analyze_and_generate_tasks(
         &self,
@@ -139,27 +140,27 @@ impl Brain {
     ) -> Result<Vec<Task>> {
         // Build analysis prompt
         let prompt = self.build_analysis_prompt(report, target_dir);
-        
+
         // Call LLM to get task suggestions
         let response = self.llm_client.complete(&prompt).await?;
-        
+
         // Parse response into tasks
         let tasks = self.parse_tasks_from_response(&response, report)?;
-        
+
         // Publish tasks to blackboard
         for task in &tasks {
             self.blackboard.add_task(task.clone()).await?;
         }
-        
+
         tracing::info!(
             task_count = tasks.len(),
             specialist = ?self.specialist_type,
             "Brain generated tasks"
         );
-        
+
         Ok(tasks)
     }
-    
+
     /// Genera código real para una tarea específica
     pub async fn generate_code_for_task(
         &self,
@@ -168,13 +169,13 @@ impl Brain {
     ) -> Result<String> {
         let prompt = self.build_code_prompt(task, context);
         let code = self.llm_client.complete(&prompt).await?;
-        
+
         tracing::debug!(
             task_id = %task.id,
             code_length = code.len(),
             "Brain generated code"
         );
-        
+
         Ok(code)
     }
 
@@ -187,7 +188,7 @@ impl Brain {
         let raw = self.generate_code_for_task(task, context).await?;
         Ok(parse_llm_code_response(&raw, &task.target_file))
     }
-    
+
     fn build_analysis_prompt(&self, report: &ColonizationReport, target_dir: &PathBuf) -> String {
         let dna = &report.dna;
         let mut prompt = format!(
@@ -202,7 +203,7 @@ impl Brain {
             dna.manifest_hits,
             dna.debt
         );
-        
+
         prompt += "BASED ON THE ABOVE ANALYSIS, generate 3-5 SPECIFIC, EXECUTABLE TASKS.\n\n";
         prompt += "FORMAT: Each task must be:\n";
         prompt += "1. File to create/modify (e.g., src/main.rs)\n";
@@ -213,10 +214,10 @@ impl Brain {
         prompt += "TASK: Create REST API endpoint for user authentication with JWT tokens\n";
         prompt += "SPECIALIST: rust\n\n";
         prompt += "Generate tasks that would improve this codebase:\n";
-        
+
         prompt
     }
-    
+
     fn build_code_prompt(&self, task: &Task, context: &[TaskResult]) -> String {
         let mut prompt = format!(
             "Eres un programador {} experto.\n\n\
@@ -228,7 +229,7 @@ impl Brain {
             task.target_file.display(),
             task.specialist_type
         );
-        
+
         if !context.is_empty() {
             prompt += "CONTEXTO (tareas relacionadas ya completadas):\n";
             for ctx in context.iter().take(5) {
@@ -236,7 +237,7 @@ impl Brain {
             }
             prompt += "\n";
         }
-        
+
         prompt += "INSTRUCCIONES:\n";
         prompt += "1. Escribe el código COMPLETO y REAL para el archivo especificado\n";
         prompt += "2. El código debe ser funcional, compilable, idiomático\n";
@@ -249,22 +250,22 @@ impl Brain {
         prompt += "<código aquí>\n";
         prompt += "[/CODE]\n\n";
         prompt += "Genera el código:\n";
-        
+
         prompt
     }
-    
+
     fn parse_tasks_from_response(
         &self,
         response: &str,
         report: &ColonizationReport,
     ) -> Result<Vec<Task>> {
         let mut tasks = Vec::new();
-        
+
         // Simple parser - looks for FILE: and TASK: patterns
         let mut current_file = String::new();
         let mut current_task = String::new();
         let mut current_specialist = self.specialist_type;
-        
+
         for line in response.lines() {
             let line = line.trim();
             if line.starts_to_uppercase("FILE:") {
@@ -281,7 +282,7 @@ impl Brain {
                     _ => self.specialist_type,
                 };
             }
-            
+
             // If we have enough info, create a task
             if !current_file.is_empty() && !current_task.is_empty() {
                 tasks.push(Task {
@@ -298,36 +299,37 @@ impl Brain {
                 current_task.clear();
             }
         }
-        
+
         // If no tasks parsed, create a default task based on DNA
         if tasks.is_empty() {
             let default_task = self.create_default_task(report)?;
             tasks.push(default_task);
         }
-        
+
         Ok(tasks)
     }
-    
+
     fn create_default_task(&self, report: &ColonizationReport) -> Result<Task> {
-        let (description, target_file) = match report.dna.dominant_languages.first().map(|s| s.as_str()) {
-            Some("Rust") | Some("C") | Some("C++") => (
-                "Add error handling and logging to main module".to_string(),
-                PathBuf::from("src/main.rs"),
-            ),
-            Some("Python") => (
-                "Add type hints and docstrings to main module".to_string(),
-                PathBuf::from("main.py"),
-            ),
-            Some("JavaScript") | Some("TypeScript") => (
-                "Add JSDoc comments and error handling".to_string(),
-                PathBuf::from("src/index.js"),
-            ),
-            _ => (
-                "Create comprehensive README with setup instructions".to_string(),
-                PathBuf::from("README.md"),
-            ),
-        };
-        
+        let (description, target_file) =
+            match report.dna.dominant_languages.first().map(|s| s.as_str()) {
+                Some("Rust") | Some("C") | Some("C++") => (
+                    "Add error handling and logging to main module".to_string(),
+                    PathBuf::from("src/main.rs"),
+                ),
+                Some("Python") => (
+                    "Add type hints and docstrings to main module".to_string(),
+                    PathBuf::from("main.py"),
+                ),
+                Some("JavaScript") | Some("TypeScript") => (
+                    "Add JSDoc comments and error handling".to_string(),
+                    PathBuf::from("src/index.js"),
+                ),
+                _ => (
+                    "Create comprehensive README with setup instructions".to_string(),
+                    PathBuf::from("README.md"),
+                ),
+            };
+
         Ok(Task {
             id: Uuid::new_v4(),
             description,
@@ -362,10 +364,7 @@ fn is_safe_llm_repo_path(rel: &str) -> bool {
         match c {
             Component::ParentDir => return false,
             Component::Normal(os) => {
-                if os
-                    .to_str()
-                    .is_some_and(|s| s.eq_ignore_ascii_case(".git"))
-                {
+                if os.to_str().is_some_and(|s| s.eq_ignore_ascii_case(".git")) {
                     return false;
                 }
             }

@@ -1,36 +1,36 @@
 //! The Hive — núcleo de orquestación (colonización, ADN, obreras, Consejo).
 
 // Módulos core
+pub mod agent;
 pub mod config;
 pub mod council;
 pub mod discovery;
-pub mod request;
-pub mod work;
-pub mod orchestrator;
-pub mod agent;
 pub mod git_manager;
+pub mod orchestrator;
+pub mod request;
 pub mod resource_monitor;
 pub mod state;
+pub mod work;
 
 // Módulos de mejora del enjambre
-pub mod prioritizer;
-pub mod dashboard;
-pub mod worktree_manager;
-pub mod file_lock;
 pub mod checkpoint;
-pub mod model_router;
+pub mod dashboard;
+pub mod file_lock;
 pub mod human_in_loop;
 pub mod living_specs;
+pub mod model_router;
+pub mod prioritizer;
+pub mod roles;
+pub mod sequential_merger;
 pub mod supervisor;
 pub mod tracing_system;
-pub mod sequential_merger;
-pub mod roles;
+pub mod worktree_manager;
 
 // Módulos multi-agente (opcionales, requieren feature "multiagent")
 #[cfg(feature = "multiagent")]
-pub mod brain;
-#[cfg(feature = "multiagent")]
 pub mod blackboard;
+#[cfg(feature = "multiagent")]
+pub mod brain;
 #[cfg(feature = "multiagent")]
 pub mod worker;
 
@@ -56,7 +56,8 @@ pub(crate) fn purge_dot_hive_worker_artifacts(repo_root: &Path) -> u32 {
         let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
-        if name.starts_with(".hive_worker_") && name.ends_with(".md")
+        if name.starts_with(".hive_worker_")
+            && name.ends_with(".md")
             && std::fs::remove_file(&p).is_ok()
         {
             removed += 1;
@@ -103,7 +104,8 @@ pub async fn run_queen_cycle(target: PathBuf, cfg: &HiveConfig) -> Result<()> {
     cleanup_legacy_hive_worker_md(&target);
 
     let mut hive_request = crate::request::HiveRequest::resolve(&target)?;
-    let client_feedback_src = crate::request::integrate_client_feedback(&target, &mut hive_request)?;
+    let client_feedback_src =
+        crate::request::integrate_client_feedback(&target, &mut hive_request)?;
     if client_feedback_src != crate::request::ClientFeedbackSource::None {
         info!("La Reina integra la petición del cliente en la misión de este ciclo");
     }
@@ -138,9 +140,7 @@ pub async fn run_queen_cycle(target: PathBuf, cfg: &HiveConfig) -> Result<()> {
 
     let repo_path = target.clone();
     let mut orchestrator = HiveOrchestrator::new(target, profile);
-    orchestrator
-        .start(cfg, &hive_request, work_mode)
-        .await?;
+    orchestrator.start(cfg, &hive_request, work_mode).await?;
 
     if client_feedback_src == crate::request::ClientFeedbackSource::File {
         crate::request::archive_client_feedback_file(&repo_path)?;
@@ -225,7 +225,10 @@ mod tests {
         run_queen_cycle(t.path().to_path_buf(), &cfg)
             .await
             .expect("ciclo con feedback de cliente");
-        assert!(!t.path().join(crate::request::CLIENT_FEEDBACK_FILENAME).exists());
+        assert!(!t
+            .path()
+            .join(crate::request::CLIENT_FEEDBACK_FILENAME)
+            .exists());
         let arch = t.path().join(".hive/client_feedback_archive");
         assert!(arch.is_dir());
         assert!(arch.read_dir().unwrap().count() >= 1);
@@ -261,7 +264,9 @@ mod tests {
     #[test]
     fn cleanup_legacy_worker_md_removes_files() {
         let t = tempfile::tempdir().unwrap();
-        let junk = t.path().join(".hive_worker_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md");
+        let junk = t
+            .path()
+            .join(".hive_worker_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md");
         std::fs::write(&junk, "legacy").unwrap();
         assert_eq!(crate::purge_dot_hive_worker_artifacts(t.path()), 1);
         assert!(!junk.exists());

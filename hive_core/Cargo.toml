@@ -3,6 +3,7 @@ name = "hive_core"
 version = "0.1.0"
 edition = "2021"
 
+# Umbral alineado con CI: `cargo llvm-cov test --fail-under-lines 95` y exclusión de main/sequential_merger/worktree_manager.
 [package.metadata.cargo-llvm-cov]
 fail-under-lines = 95
 

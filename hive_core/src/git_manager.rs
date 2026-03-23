@@ -263,6 +263,15 @@ mod tests {
     }
 
     #[test]
+    fn initialize_repo_creates_git_when_absent() {
+        let tmp = TempDir::new().unwrap();
+        let mut gm = GitManager::new();
+        gm.initialize_repo(&tmp.path().to_path_buf()).unwrap();
+        assert!(tmp.path().join(".git").exists());
+        assert!(gm.repo.is_some());
+    }
+
+    #[test]
     fn create_pull_request_simulation_ok() {
         let gm = GitManager::new();
         gm.create_pull_request("feature/x", "título", "cuerpo")
@@ -332,5 +341,29 @@ mod tests {
         assert!(repo2
             .find_branch("hive/worker/to-delete", BranchType::Local)
             .is_err());
+    }
+
+    #[test]
+    fn delete_nonexistent_branch_returns_false() {
+        let tmp = TempDir::new().unwrap();
+        crate::discovery::colonize_and_analyze(tmp.path()).unwrap();
+        let result =
+            delete_local_feature_branch_after_integrated_merge(tmp.path(), "nonexistent-branch");
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn git_manager_debug_format() {
+        let gm = GitManager::new();
+        let debug_str = format!("{:?}", gm);
+        assert!(debug_str.contains("GitManager"));
+        assert!(debug_str.contains("false"));
+    }
+
+    #[test]
+    fn git_manager_default() {
+        let gm = GitManager::default();
+        assert!(gm.repo.is_none());
     }
 }

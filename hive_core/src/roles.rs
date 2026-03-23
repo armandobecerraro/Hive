@@ -359,4 +359,73 @@ mod tests {
             "PM debe tener mayor prioridad"
         );
     }
+
+    #[test]
+    fn test_role_config_serialization() {
+        let config = HiveRole::Engineer.config();
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: RoleConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.role, HiveRole::Engineer);
+    }
+
+    #[test]
+    fn test_role_capabilities_all_false() {
+        let config = HiveRole::ProductManager.config();
+        assert!(!config.capabilities.can_write_code);
+        assert!(!config.capabilities.can_review_code);
+    }
+
+    #[test]
+    fn test_role_capabilities_all_true() {
+        let config = HiveRole::Generalist.config();
+        assert!(config.capabilities.can_write_code);
+        assert!(config.capabilities.can_review_code);
+        assert!(config.capabilities.can_write_tests);
+        assert!(config.capabilities.can_write_docs);
+    }
+
+    #[test]
+    fn test_role_tools_not_empty() {
+        for role in HiveRole::all() {
+            let config = role.config();
+            assert!(!config.tools.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_role_display_all() {
+        assert_eq!(HiveRole::ProductManager.to_string(), "Product Manager");
+        assert_eq!(HiveRole::Architect.to_string(), "Architect");
+        assert_eq!(HiveRole::Engineer.to_string(), "Engineer");
+        assert_eq!(HiveRole::TechWriter.to_string(), "Tech Writer");
+        assert_eq!(HiveRole::SecurityAuditor.to_string(), "Security Auditor");
+        assert_eq!(
+            HiveRole::PerformanceEngineer.to_string(),
+            "Performance Engineer"
+        );
+        assert_eq!(HiveRole::Generalist.to_string(), "Generalist");
+    }
+
+    #[test]
+    fn test_for_task_case_insensitive() {
+        assert_eq!(
+            HiveRole::for_task("SECURITY CHECK"),
+            HiveRole::SecurityAuditor
+        );
+        assert_eq!(
+            HiveRole::for_task("Test Coverage"),
+            HiveRole::QualityAssurance
+        );
+        assert_eq!(HiveRole::for_task("DOCUMENTATION"), HiveRole::TechWriter);
+    }
+
+    #[test]
+    fn test_role_hashes() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        for role in HiveRole::all() {
+            set.insert(role);
+        }
+        assert_eq!(set.len(), 9);
+    }
 }

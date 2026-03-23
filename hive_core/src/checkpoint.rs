@@ -267,13 +267,16 @@ mod tests {
         cp.advance_phase(WorkflowPhase::Planning);
         assert_eq!(cp.phase, WorkflowPhase::Planning);
 
-        cp.complete_step("analyze_repo", StepResult {
-            step_name: "analyze_repo".into(),
-            success: true,
-            duration_ms: 1500,
-            output: Some("Found 5 files".into()),
-            error: None,
-        });
+        cp.complete_step(
+            "analyze_repo",
+            StepResult {
+                step_name: "analyze_repo".into(),
+                success: true,
+                duration_ms: 1500,
+                output: Some("Found 5 files".into()),
+                error: None,
+            },
+        );
 
         assert!(cp.is_step_completed("analyze_repo"));
         assert!(!cp.is_step_completed("generate_code"));
@@ -299,13 +302,16 @@ mod tests {
         let task_id = Uuid::new_v4();
         let mut cp = Checkpoint::new(task_id, 1);
         cp.advance_phase(WorkflowPhase::CodeGeneration);
-        cp.complete_step("plan", StepResult {
-            step_name: "plan".into(),
-            success: true,
-            duration_ms: 500,
-            output: None,
-            error: None,
-        });
+        cp.complete_step(
+            "plan",
+            StepResult {
+                step_name: "plan".into(),
+                success: true,
+                duration_ms: 500,
+                output: None,
+                error: None,
+            },
+        );
 
         store.save(&cp).await.unwrap();
 
@@ -369,13 +375,16 @@ mod tests {
 
         for (phase, step) in phases {
             cp.advance_phase(phase);
-            cp.complete_step(step, StepResult {
-                step_name: step.into(),
-                success: true,
-                duration_ms: 100,
-                output: None,
-                error: None,
-            });
+            cp.complete_step(
+                step,
+                StepResult {
+                    step_name: step.into(),
+                    success: true,
+                    duration_ms: 100,
+                    output: None,
+                    error: None,
+                },
+            );
         }
 
         assert_eq!(cp.phase, WorkflowPhase::Commit);
@@ -389,27 +398,80 @@ mod tests {
 
         // Primer intento falla
         cp.advance_phase(WorkflowPhase::CodeGeneration);
-        cp.complete_step("generate", StepResult {
-            step_name: "generate".into(),
-            success: false,
-            duration_ms: 100,
-            output: None,
-            error: Some("LLM timeout".into()),
-        });
+        cp.complete_step(
+            "generate",
+            StepResult {
+                step_name: "generate".into(),
+                success: false,
+                duration_ms: 100,
+                output: None,
+                error: Some("LLM timeout".into()),
+            },
+        );
 
         // Segundo intento
         let mut cp2 = Checkpoint::new(task_id, 2);
         cp2.advance_phase(WorkflowPhase::CodeGeneration);
-        cp2.complete_step("generate", StepResult {
-            step_name: "generate".into(),
-            success: true,
-            duration_ms: 200,
-            output: Some("fn main() {}".into()),
-            error: None,
-        });
+        cp2.complete_step(
+            "generate",
+            StepResult {
+                step_name: "generate".into(),
+                success: true,
+                duration_ms: 200,
+                output: Some("fn main() {}".into()),
+                error: None,
+            },
+        );
 
         assert_eq!(cp.attempt, 1);
         assert_eq!(cp2.attempt, 2);
         assert!(cp2.last_step_result().unwrap().success);
+    }
+
+    #[test]
+    fn workflow_phase_display_cubre_todas_las_variantes() {
+        use std::fmt::Write;
+        let mut s = String::new();
+        for p in [
+            WorkflowPhase::Analysis,
+            WorkflowPhase::Planning,
+            WorkflowPhase::CodeGeneration,
+            WorkflowPhase::Testing,
+            WorkflowPhase::Commit,
+            WorkflowPhase::AwaitingReview,
+            WorkflowPhase::ApplyingFeedback,
+            WorkflowPhase::Completed,
+            WorkflowPhase::Failed,
+        ] {
+            write!(&mut s, "{p} ").unwrap();
+        }
+        assert!(s.contains("testing"));
+        assert!(s.contains("awaiting_review"));
+        assert!(s.contains("failed"));
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_borra_antiguos() {
+        let tmp = tempdir().unwrap();
+        let store = CheckpointStore::new(tmp.path());
+        let task_id = Uuid::new_v4();
+        let mut cp = Checkpoint::new(task_id, 1);
+        cp.updated_at = chrono::Utc::now().timestamp() - 100_000;
+        store.save(&cp).await.unwrap();
+        let n = store.cleanup_old(3600).await.unwrap();
+        assert!(n >= 1);
+        assert!(!store.exists(task_id).await);
+    }
+
+    #[tokio::test]
+    async fn test_list_ignora_json_invalido_y_no_json() {
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path().join(".hive").join("checkpoints");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bad.json"), "not json").unwrap();
+        std::fs::write(dir.join("readme.txt"), "{}").unwrap();
+        let store = CheckpointStore::new(tmp.path());
+        let list = store.list().await.unwrap();
+        assert!(list.is_empty());
     }
 }

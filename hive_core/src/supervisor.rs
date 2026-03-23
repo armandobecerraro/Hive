@@ -258,7 +258,7 @@ impl WorkerSupervisor {
 }
 
 /// Acción que el supervisor decide tomar
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SupervisorAction {
     /// No hacer nada
     Ignore,
@@ -451,5 +451,128 @@ mod tests {
         let failed = supervisor.list_failed();
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0].worker_id, id1);
+    }
+
+    #[test]
+    fn test_restart_policy_default() {
+        let policy = RestartPolicy::default();
+        assert_eq!(policy.max_restarts, 3);
+        assert_eq!(policy.restart_delay_ms, 1000);
+        assert_eq!(policy.backoff_multiplier, 2.0);
+    }
+
+    #[test]
+    fn test_worker_health_variants() {
+        let healthy = WorkerHealth::Healthy;
+        let degraded = WorkerHealth::Degraded {
+            reason: "slow".into(),
+        };
+        let failed = WorkerHealth::Failed {
+            reason: "crash".into(),
+            restart_count: 1,
+        };
+        let terminated = WorkerHealth::Terminated {
+            reason: "max restarts".into(),
+        };
+
+        assert_eq!(healthy, WorkerHealth::Healthy);
+        assert!(matches!(degraded, WorkerHealth::Degraded { .. }));
+        assert!(matches!(failed, WorkerHealth::Failed { .. }));
+        assert!(matches!(terminated, WorkerHealth::Terminated { .. }));
+    }
+
+    #[test]
+    fn test_restart_record() {
+        let record = RestartRecord {
+            attempt: 1,
+            timestamp: 1234567890,
+            delay_ms: 1000,
+            success: true,
+            error: None,
+        };
+        assert_eq!(record.attempt, 1);
+        assert!(record.success);
+    }
+
+    #[test]
+    fn test_report_failure_unknown_worker() {
+        let mut supervisor = WorkerSupervisor::default();
+        let unknown = Uuid::new_v4();
+        let action = supervisor.report_failure(unknown, "err".into());
+        assert_eq!(action, SupervisorAction::Ignore);
+    }
+
+    #[test]
+    fn test_report_degraded() {
+        let mut supervisor = WorkerSupervisor::default();
+        let worker_id = Uuid::new_v4();
+
+        supervisor.register(worker_id, "rust".into());
+        supervisor.report_degraded(worker_id, "high latency".into());
+
+        let health = supervisor.get_health(worker_id).unwrap();
+        assert!(matches!(health, WorkerHealth::Degraded { .. }));
+    }
+
+    #[test]
+    fn test_list_workers() {
+        let mut supervisor = WorkerSupervisor::default();
+        supervisor.register(Uuid::new_v4(), "rust".into());
+        supervisor.register(Uuid::new_v4(), "python".into());
+
+        let workers = supervisor.list_workers();
+        assert_eq!(workers.len(), 2);
+    }
+
+    #[test]
+    fn test_supervisor_events() {
+        let mut supervisor = WorkerSupervisor::default();
+        let worker_id = Uuid::new_v4();
+
+        supervisor.register(worker_id, "rust".into());
+        supervisor.report_failure(worker_id, "error".into());
+        supervisor.report_healthy(worker_id);
+
+        let events = supervisor.get_events();
+        assert!(events.len() >= 3);
+    }
+
+    #[test]
+    fn test_supervisor_stats_terminated() {
+        let policy = RestartPolicy {
+            max_restarts: 0,
+            ..Default::default()
+        };
+        let mut supervisor = WorkerSupervisor::new(policy);
+        let worker_id = Uuid::new_v4();
+
+        supervisor.register(worker_id, "rust".into());
+        supervisor.report_failure(worker_id, "err".into());
+
+        let stats = supervisor.stats();
+        assert_eq!(stats.terminated, 1);
+    }
+
+    #[test]
+    fn test_restart_action_debug() {
+        let action = SupervisorAction::Restart {
+            delay_ms: 1000,
+            attempt: 1,
+        };
+        let debug_str = format!("{:?}", action);
+        assert!(debug_str.contains("Restart"));
+    }
+
+    #[test]
+    fn test_restart_record_with_error() {
+        let record = RestartRecord {
+            attempt: 1,
+            timestamp: 1234567890,
+            delay_ms: 1000,
+            success: false,
+            error: Some("OOM".into()),
+        };
+        assert!(!record.success);
+        assert!(record.error.is_some());
     }
 }
