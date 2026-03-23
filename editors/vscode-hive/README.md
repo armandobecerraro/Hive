@@ -1,6 +1,21 @@
-# Hive — extensión Visual Studio Code
+# Hive — extensión (VS Code Extension Host)
 
 Panel de misión para el orquestador **hive_core**: escribe la petición, genera `hive.request.json` y ejecuta `hive_core --once` sobre la carpeta del workspace.
+
+## Compatibilidad multi-IDE
+
+Este paquete es una **extensión estándar** del ecosistema **Visual Studio Code** (manifiesto `package.json`, API `@types/vscode`). **No** es un fork del editor: un solo artefacto sirve para todos los productos que cargan el **Extension Host** compatible.
+
+| Entorno | Instalación habitual |
+|--------|------------------------|
+| **Visual Studio Code** | Marketplace Microsoft o `.vsix` |
+| **Cursor** | *Extensions* → *Install from VSIX…* o arrastrar el `.vsix` |
+| **Windsurf** | Misma familia Code OSS; suele aceptar `.vsix` o catálogo compatible |
+| **VSCodium / Code OSS** | [Open VSX](https://open-vsx.org/) o `.vsix` |
+| **GitHub Codespaces** | Extensiones VS Code estándar |
+| **Antigravity u otros** | Si el IDE ofrece **instalación de extensiones VS Code** (VSIX / marketplace compatible), esta extensión debe cargarse igual. Si el producto **no** expone ese host, no aplicará (limitación del IDE, no de Hive). |
+
+**Resumen:** si el editor se comporta como “VS Code con extensiones”, Hive encaja; si es un editor sin ese modelo, haría falta otro tipo de integración (CLI, LSP, app aparte).
 
 ## Requisitos
 
@@ -10,7 +25,9 @@ Panel de misión para el orquestador **hive_core**: escribe la petición, genera
    ```
    La ruta típica es `hive_core/target/release/hive_core`.
 
-2. Abrir en VS Code / Cursor la **carpeta del repositorio** donde debe correr La Reina (no un archivo suelto sin carpeta).
+2. Abrir la **carpeta del repositorio** donde debe correr La Reina (workspace con raíz clara).
+
+3. Configurar **`hive.executablePath`** si `hive_core` no está en el `PATH` del proceso del editor.
 
 ## Instalación (desarrollo)
 
@@ -20,7 +37,10 @@ npm install
 npm run compile
 ```
 
-En VS Code: **Run > Install Extension from Location…** y elige `editors/vscode-hive`, o empaqueta con `npx @vscode/vsce package` e instala el `.vsix`.
+- **Desde carpeta:** paleta de comandos → **Install Extension from Location…** (nombre exacto puede variar ligeramente según el IDE) y elige `editors/vscode-hive`.
+- **VSIX:** `npx @vscode/vsce package` y luego *Install from VSIX…*.
+
+Publicar en **Open VSX** además del Marketplace de Microsoft mejora el alcance en forks (p. ej. VSCodium).
 
 ## Configuración
 
@@ -31,10 +51,10 @@ En VS Code: **Run > Install Extension from Location…** y elige `editors/vscode
 
 ## Comandos
 
-- **Hive: Abrir panel de misión** — Chat + opciones (stack, modo, `force_scaffold`) y ejecución del ciclo.
+- **Hive: Abrir panel de misión** — Misión + opciones (stack, modo, `force_scaffold`) y ejecución del ciclo.
 - **Hive: Ejecutar ciclo (hive.request.json actual)** — Solo ejecuta el binario; el JSON debe existir ya.
 
 ## Notas
 
-- La extensión **no** incluye el motor Rust; solo lo invoca.
-- Variables como `HIVE_PROTECT_MAIN` se leen del entorno del proceso del editor (puedes exportarlas antes de abrir VS Code o usar la configuración del sistema).
+- La extensión **no** incluye el motor Rust; solo invoca `hive_core`.
+- Variables como `HIVE_PROTECT_MAIN` las hereda el proceso del editor (entorno del sistema o terminal desde la que lanzaste el IDE).

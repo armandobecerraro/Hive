@@ -88,9 +88,9 @@ See `examples/hive.json` for the complete schema including:
 
 La protección de rama en GitHub/GitLab es **complementaria**: evita pushes accidentales al remoto; esta política controla el comportamiento local del orquestador.
 
-### Extensión Visual Studio Code / Cursor
+### Extensión (VS Code, Cursor, Windsurf, Open VSX, etc.)
 
-En el repo hay una extensión en [`../editors/vscode-hive`](../editors/vscode-hive/README.md): panel de misión, generación de `hive.request.json` y ejecución de `hive_core --once` sobre la carpeta abierta. Requiere el binario compilado y, si hace falta, la opción `hive.executablePath` apuntando a `target/release/hive_core`.
+En el repo hay una extensión en [`../editors/vscode-hive`](../editors/vscode-hive/README.md): panel de misión, generación de `hive.request.json` y ejecución de `hive_core --once` sobre la carpeta abierta. Usa el **Extension Host** estándar de VS Code, por lo que aplica a **Cursor**, **Windsurf**, **VSCodium** y cualquier IDE compatible; ver tabla en ese README. Requiere el binario compilado y, si hace falta, `hive.executablePath` → `target/release/hive_core`.
 
 ### Cargo.toml Dependencies
 - `git2` - Git operations

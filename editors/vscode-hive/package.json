@@ -1,10 +1,19 @@
 {
   "name": "hive-vscode",
   "displayName": "Hive — La Colmena",
-  "description": "Panel de chat y ejecución del ciclo La Reina (hive_core) sobre la carpeta del workspace.",
+  "description": "Panel de misión y ciclo La Reina (hive_core). Compatible con VS Code, Cursor, Windsurf y cualquier IDE que use el Extension Host estándar.",
   "version": "0.1.0",
   "publisher": "hive",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/armandobecerraro/Hive.git",
+    "directory": "editors/vscode-hive"
+  },
+  "homepage": "https://github.com/armandobecerraro/Hive/tree/main/editors/vscode-hive",
+  "bugs": {
+    "url": "https://github.com/armandobecerraro/Hive/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -15,7 +24,11 @@
     "hive",
     "git",
     "automation",
-    "orchestration"
+    "orchestration",
+    "cursor",
+    "windsurf",
+    "vscode",
+    "open-vsx"
   ],
   "activationEvents": [
     "onCommand:hive.openChat",
