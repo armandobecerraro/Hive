@@ -1,0 +1,170 @@
+# Servicio principal de tests: `rust-toolchain-tests` (perfil dev). Producción: perfil `prod`.
+#
+# IMPORTANTE (Docker Desktop — nombres explícitos):
+#   - `rust-toolchain-tests` = SOLO Rust/cargo test en contenedor. NO es La Colmena.
+#   - `hive-colmena` = La Colmena con agentes + Ollama (perfil llm).
+#   - `ollama-model-download` sale "Exited (0)" al terminar: es normal (job único de `ollama pull`).
+#   - Contenedores viejos (p. ej. antiguo `hive-1`): docker compose rm -f rust-toolchain-tests 2>/dev/null; o borrar desde Desktop.
+#
+# Stack Reina + Ollama (perfil `llm`) — dejar La Colmena trabajando en segundo plano:
+#   docker compose --profile llm up -d --build
+#   (ollama + ollama-model-download + hive-colmena en daemon con OLLAMA_BASE_URL).
+#
+# Un solo ciclo (sale al terminar):
+#   ./scripts/run_llm_docker.sh
+#
+# Coloca tu repo git en ./workspace (o cambia command en hive-colmena / hive-llm).
+#
+# Modelo Ollama: por defecto `qwen2.5-coder:3b` (coder ligero). Override en `.env`: OLLAMA_MODEL=...
+# Si no hay RAM: vuelve a `tinyllama`. Para más calidad con RAM: `qwen2.5-coder:7b` + más memoria Docker.
+#
+# Si hive_core falla al arrancar con SIGSEGV, suele ser caché de build corrupta:
+#   docker compose --profile llm build --no-cache hive-colmena
+#
+# Solo Ollama (sin Hive):
+#   docker compose --profile llm up -d ollama
+#   docker compose exec ollama ollama pull qwen2.5-coder:3b
+#
+# Ver logs en vivo:
+#   Colmena + Ollama:  docker compose --profile llm logs -f hive-colmena
+#   Reina sin Ollama:  docker compose --profile service logs -f hive-queen
+#   (hive-queen sigue existiendo; no se reemplazó, es otro modo de despliegue.)
+#
+services:
+  # Imagen Rust para tests/CI (NO La Colmena). En Desktop: *rust-toolchain-tests-1*, no confundir con hive-colmena.
+  rust-toolchain-tests:
+    profiles:
+      - dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hive-core-dev:local
+    volumes:
+      - .:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    working_dir: /app
+    environment:
+      - CARGO_TERM_COLOR=always
+
+  hive-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: hive-core-prod:latest
+    profiles:
+      - prod
+    volumes:
+      - ./workspace:/workspace
+
+  # Daemon permanente sin OLLAMA_BASE_URL → Brain usa mock. Logs: --profile service logs -f hive-queen
+  hive-queen:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: hive-core-prod:latest
+    profiles:
+      - service
+    restart: unless-stopped
+    volumes:
+      - ./workspace:/workspace
+    environment:
+      - RUST_LOG=info
+      - HIVE_POLL_INTERVAL_SECS=20
+    command: ["--daemon", "/workspace/test_repo"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/hive_core", "--health", "/workspace/test_repo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  # API compatible con el cliente Ollama de hive_core (brain.rs).
+  ollama:
+    image: ollama/ollama:latest
+    profiles:
+      - llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # Job único: descarga el modelo en el volumen de Ollama. Estado Exited (0) en Desktop es correcto.
+  ollama-model-download:
+    image: ollama/ollama:latest
+    profiles:
+      - llm
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      PULL_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:3b}
+    entrypoint: ["/bin/sh", "-c", "set -e; echo \"Pulling model: $$PULL_MODEL\"; ollama pull \"$$PULL_MODEL\""]
+    restart: "no"
+
+  # La Colmena en bucle con Ollama. Logs: --profile llm logs -f hive-colmena
+  hive-colmena:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: hive-core-llm:local
+    profiles:
+      - llm
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-model-download:
+        condition: service_completed_successfully
+    environment:
+      RUST_LOG: info
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:3b}
+      HIVE_SKIP_RESOURCE_GATE: "1"
+      HIVE_POLL_INTERVAL_SECS: "30"
+    volumes:
+      - ./workspace:/workspace
+    working_dir: /workspace
+    command: ["--daemon", "/workspace/test_repo"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/hive_core", "--health", "/workspace/test_repo"]
+      interval: 45s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Misma imagen que hive-colmena; un solo ciclo (--once). Perfil aparte para no salir al hacer `up -d`.
+  hive-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: hive-core-llm:local
+    profiles:
+      - llm-once
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-model-download:
+        condition: service_completed_successfully
+    environment:
+      RUST_LOG: info
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:3b}
+      HIVE_SKIP_RESOURCE_GATE: "1"
+    volumes:
+      - ./workspace:/workspace
+    working_dir: /workspace
+    command: ["--once", "/workspace/test_repo"]
+
+volumes:
+  cargo-cache:
+  target-cache:
+  ollama-models:

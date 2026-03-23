@@ -1,0 +1,6 @@
+{
+  "title": "Mi servicio de catálogo",
+  "description": "API HTTP en Rust que expone CRUD de ítems con validación y tests de integración.",
+  "stack": "rust_binary",
+  "force_scaffold": false
+}

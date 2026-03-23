@@ -1,0 +1,50 @@
+# Production Dockerfile for The Hive
+FROM rust:1.85-bookworm AS builder
+
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libgit2-dev libssl-dev pkg-config cmake \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/hive_core
+
+# Copy manifests
+COPY Cargo.toml Cargo.lock ./
+
+# Build dependencies first (caching)
+RUN mkdir src \
+    && echo "fn main() {}" > src/main.rs \
+    && cargo build --release --features multiagent \
+    && rm -rf src
+
+# Copy source code
+COPY src ./src
+COPY examples ./examples
+COPY tests ./tests
+
+# Build application (multiagent: reqwest + Brain + llamadas a Ollama)
+RUN cargo build --release --features multiagent
+
+# Runtime image
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libgit2-dev ca-certificates libssl3 \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy binary from builder
+COPY --from=builder /usr/src/hive_core/target/release/hive_core /usr/local/bin/hive_core
+
+# Create working directory
+WORKDIR /workspace
+
+# Create non-root user
+RUN useradd -m -u 1000 hive \
+    && chown -R hive:hive /workspace
+
+USER hive
+
+# Set entrypoint
+ENTRYPOINT ["hive_core"]
+CMD ["/workspace"]

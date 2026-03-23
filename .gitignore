@@ -1,0 +1,13 @@
+# Rust
+**/target/
+
+# Secretos y entorno local
+hive_core/.env
+.env
+.env.local
+*.pem
+
+# SO y herramientas
+.DS_Store
+.idea/
+*.swp

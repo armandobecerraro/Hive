@@ -1,0 +1,87 @@
+{
+  "$schema": "https://raw.githubusercontent.com/the-hive-project/schemas/main/hive-schema.json",
+  "version": "1.0.0",
+  "created_at": "2026-03-21T15:21:26.310Z",
+  "repository_profile": {
+    "languages": ["Rust", "Python", "JavaScript"],
+    "frameworks": ["React", "Express"],
+    "technical_debt": ["TODO files", "Deprecated code"],
+    "build_tools": ["Cargo", "npm"],
+    "test_frameworks": ["cargo test", "Jest"],
+    "ci_cd": ["GitHub Actions", "Docker"]
+  },
+  "decision_tree": [
+    {
+      "id": "decision-001",
+      "timestamp": "2026-03-21T15:30:00.000Z",
+      "decision": "Initialize repository analysis",
+      "reasoning": "Directory contains source files, performing technical DNA analysis",
+      "outcome": "Generated repository profile with 3 languages and 2 frameworks"
+    },
+    {
+      "id": "decision-002",
+      "timestamp": "2026-03-21T15:35:00.000Z",
+      "decision": "Spawn Rust analyzer agent",
+      "reasoning": "Rust detected as primary language with Cargo build tool",
+      "outcome": "Agent rust-analyzer-123 created and assigned task"
+    },
+    {
+      "id": "decision-003",
+      "timestamp": "2026-03-21T15:40:00.000Z",
+      "decision": "Create orphan branch for agent work",
+      "reasoning": "Agent needs isolated workspace to prevent conflicts with main",
+      "outcome": "Branch task/rust_analyzer-rust-analyzer-123 created"
+    }
+  ],
+  "version_history": [
+    {
+      "version": "0.1.0",
+      "timestamp": "2026-03-21T15:00:00.000Z",
+      "changes": ["Initial hive.json created", "Repository profile established"],
+      "agent_id": "queen-initializer"
+    },
+    {
+      "version": "0.2.0",
+      "timestamp": "2026-03-21T15:45:00.000Z",
+      "changes": ["Added Rust analysis improvements", "Created basic test structure"],
+      "agent_id": "rust-analyzer-123",
+      "pr_url": "https://github.com/example/repo/pull/1"
+    }
+  ],
+  "active_agents": [
+    {
+      "id": "rust-analyzer-123",
+      "type": "rust_analyzer",
+      "status": "under_review",
+      "task": "Analyze and improve Rust codebase",
+      "created_at": "2026-03-21T15:35:12.000Z",
+      "branch": "task/rust_analyzer-rust-analyzer-123"
+    }
+  ],
+  "resource_limits": {
+    "max_concurrent_agents": 10,
+    "memory_threshold_mb": 1024,
+    "cpu_threshold_percent": 80.0,
+    "current_usage": {
+      "active_agents": 1,
+      "memory_used_mb": 256,
+      "cpu_used_percent": 15.5
+    }
+  },
+  "council_decisions": [
+    {
+      "agent_id": "rust-analyzer-123",
+      "timestamp": "2026-03-21T15:50:00.000Z",
+      "approved": true,
+      "comments": ["Code looks good! Follows best practices.", "Tests are comprehensive.", "Documentation is clear."],
+      "reviewer": "maintainer-council"
+    }
+  ],
+  "settings": {
+    "auto_merge_on_approval": true,
+    "require_council_approval": true,
+    "max_retry_attempts": 3,
+    "cleanup_finished_agents": true,
+    "log_level": "info"
+  }
+}
