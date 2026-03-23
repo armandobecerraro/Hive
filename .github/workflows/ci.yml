@@ -1,0 +1,76 @@
+# CI en la raíz del repo (GitHub solo ejecuta workflows desde /.github).
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  hive-core-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test (macOS)
+        working-directory: hive_core
+        run: cargo test --verbose
+
+  hive-core-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Dependencias del sistema (libgit2, SSL, LLVM)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgit2-dev libssl-dev pkg-config cmake llvm
+
+      - name: cargo fmt (--check)
+        working-directory: hive_core
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (-D warnings)
+        working-directory: hive_core
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: hive_core
+        run: cargo test --verbose
+
+      - name: Cobertura de líneas (≥ 95 %)
+        working-directory: hive_core
+        run: |
+          cargo llvm-cov test \
+            --fail-under-lines 95 \
+            --ignore-filename-regex '^(.*/)?src/main\.rs$' \
+            --summary-only \
+            --color always
+
+  vscode-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: editors/vscode-hive/package-lock.json
+
+      - name: Compilar y probar extensión
+        working-directory: editors/vscode-hive
+        run: |
+          npm ci
+          npm run compile
+          npm test

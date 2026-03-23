@@ -15,7 +15,8 @@
     "url": "https://github.com/armandobecerraro/Hive/issues"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=18"
   },
   "categories": [
     "Other"
@@ -81,6 +82,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test out/hiveRunner.test.js",
     "package": "vsce package"
   },
   "devDependencies": {

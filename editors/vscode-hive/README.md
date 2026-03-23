@@ -29,6 +29,16 @@ Este paquete es una **extensión estándar** del ecosistema **Visual Studio Code
 
 3. Configurar **`hive.executablePath`** si `hive_core` no está en el `PATH` del proceso del editor.
 
+## Pruebas
+
+```bash
+cd editors/vscode-hive
+npm install
+npm test
+```
+
+`npm test` compila TypeScript y ejecuta pruebas unitarias (`node:test`) sobre `hiveRunner` (títulos, payload JSON y escritura de `hive.request.json`).
+
 ## Instalación (desarrollo)
 
 ```bash

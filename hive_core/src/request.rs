@@ -525,7 +525,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn resolve_empty_without_file() {
+        std::env::remove_var("HIVE_REQUEST");
+        std::env::remove_var("HIVE_REQUEST_JSON");
         let t = tempdir().unwrap();
         let r = HiveRequest::resolve(t.path()).unwrap();
         assert!(!r.is_actionable());
