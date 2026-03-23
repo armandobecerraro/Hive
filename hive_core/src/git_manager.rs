@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
-use git2::{Repository, BranchType, Signature, build::CheckoutBuilder};
+use git2::{build::CheckoutBuilder, BranchType, Repository, Signature};
+use std::path::{Path, PathBuf};
 
 /// Manages Git operations for the Hive system
 pub struct GitManager {
@@ -12,6 +12,12 @@ impl std::fmt::Debug for GitManager {
         f.debug_struct("GitManager")
             .field("repo", &self.repo.is_some())
             .finish()
+    }
+}
+
+impl Default for GitManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -42,14 +48,14 @@ impl GitManager {
     /// Creates a new branch
     pub fn create_branch(&self, branch_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let repo = self.repo.as_ref().ok_or("Repository not initialized")?;
-        
+
         // Get the current HEAD commit
         let head = repo.head()?;
         let head_commit = head.peel_to_commit()?;
-        
+
         // Create the branch
         repo.branch(branch_name, &head_commit, false)?;
-        
+
         println!("🌿 Created branch: {}", branch_name);
         Ok(())
     }
@@ -57,43 +63,47 @@ impl GitManager {
     /// Checks out a branch
     pub fn checkout_branch(&self, branch_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let repo = self.repo.as_ref().ok_or("Repository not initialized")?;
-        
+
         // Find the branch
         let branch = repo.find_branch(branch_name, BranchType::Local)?;
         let reference = branch.into_reference();
-        
+
         // Set HEAD to point to this branch
         repo.set_head(reference.name().ok_or("Invalid branch name")?)?;
-        
+
         // Checkout the tree
         let treeish = repo.revparse_single(&format!("refs/heads/{}", branch_name))?;
         let tree = treeish.peel_to_tree()?;
         let mut checkout = CheckoutBuilder::new();
         checkout.force();
-        repo.checkout_tree(&tree.as_object(), Some(&mut checkout))?;
-        
+        repo.checkout_tree(tree.as_object(), Some(&mut checkout))?;
+
         println!("✅ Checked out branch: {}", branch_name);
         Ok(())
     }
 
     /// Commits changes to the repository
-    pub fn commit_changes(&self, message: &str, _path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn commit_changes(
+        &self,
+        message: &str,
+        _path: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let repo = self.repo.as_ref().ok_or("Repository not initialized")?;
-        
+
         // Create signature
         let signature = Signature::now("The Hive", "hive@example.com")?;
-        
+
         // Get the current HEAD
         let mut index = repo.index()?;
-        
+
         // Add all changes
         index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
         index.write()?;
-        
+
         // Write the tree
         let tree_id = index.write_tree()?;
         let tree = repo.find_tree(tree_id)?;
-        
+
         // Get parent commit
         let parent_commit = match repo.head() {
             Ok(head) => {
@@ -102,7 +112,7 @@ impl GitManager {
             }
             Err(_) => vec![],
         };
-        
+
         // Create commit
         let commit_id = repo.commit(
             Some("HEAD"),
@@ -112,13 +122,18 @@ impl GitManager {
             &tree,
             &parent_commit.iter().collect::<Vec<_>>(),
         )?;
-        
+
         println!("💾 Committed changes: {} ({})", message, commit_id);
         Ok(())
     }
 
     /// Registra un MR local (metadatos). El merge en `main` y el borrado de la rama los ejecuta el orquestador (`delete_local_feature_branch_after_integrated_merge`).
-    pub fn create_pull_request(&self, branch_name: &str, title: &str, description: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn create_pull_request(
+        &self,
+        branch_name: &str,
+        title: &str,
+        description: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         println!("📤 Creating Pull Request for branch: {}", branch_name);
         println!("   Title: {}", title);
         println!("   Description: {}", description);
@@ -126,7 +141,9 @@ impl GitManager {
     }
 
     /// Resuelve `main` o `master` según lo que exista en el repo (Git por defecto).
-    fn default_integration_branch(repo: &Repository) -> Result<&'static str, Box<dyn std::error::Error>> {
+    fn default_integration_branch(
+        repo: &Repository,
+    ) -> Result<&'static str, Box<dyn std::error::Error>> {
         if repo.find_branch("main", BranchType::Local).is_ok() {
             Ok("main")
         } else if repo.find_branch("master", BranchType::Local).is_ok() {
@@ -141,31 +158,31 @@ impl GitManager {
         let repo = self.repo.as_ref().ok_or("Repository not initialized")?;
         let base = Self::default_integration_branch(repo)?;
         self.checkout_branch(base)?;
-        
+
         // Find the branch to merge
         let branch = repo.find_branch(branch_name, BranchType::Local)?;
         let branch_commit = branch.get().peel_to_commit()?;
-        
+
         // Perform merge
         let mut merge_opts = git2::MergeOptions::new();
         let mut checkout_opts = CheckoutBuilder::new();
-        
+
         // Create annotated commit from branch commit
         let annotated_commit = repo.find_annotated_commit(branch_commit.id())?;
-        
+
         repo.merge(
             &[&annotated_commit],
             Some(&mut merge_opts),
             Some(&mut checkout_opts),
         )?;
-        
+
         // Commit the merge
         let signature = Signature::now("The Hive", "hive@example.com")?;
         let tree = repo.index()?.write_tree()?;
         let tree_obj = repo.find_tree(tree)?;
-        
+
         let head = repo.head()?.peel_to_commit()?;
-        
+
         repo.commit(
             Some("HEAD"),
             &signature,
@@ -174,7 +191,7 @@ impl GitManager {
             &tree_obj,
             &[&head, &branch_commit],
         )?;
-        
+
         println!("🔀 Merged branch '{}' into {}", branch_name, base);
         Ok(())
     }
@@ -182,13 +199,13 @@ impl GitManager {
     /// Gets the current branch name
     pub fn get_current_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
         let repo = self.repo.as_ref().ok_or("Repository not initialized")?;
-        
+
         let head = repo.head()?;
         let branch_name = head
             .shorthand()
             .ok_or("Could not get branch name")?
             .to_string();
-        
+
         Ok(branch_name)
     }
 }
@@ -280,7 +297,8 @@ mod tests {
         std::fs::write(tmp.path().join("base.txt"), "1").unwrap();
         let mut gm = GitManager::new();
         gm.initialize_repo(&tmp.path().to_path_buf()).unwrap();
-        gm.commit_changes("init", &tmp.path().to_path_buf()).unwrap();
+        gm.commit_changes("init", &tmp.path().to_path_buf())
+            .unwrap();
         gm.create_branch("feature/merge-me").unwrap();
         gm.checkout_branch("feature/merge-me").unwrap();
         std::fs::write(tmp.path().join("only-on-feat.txt"), "x").unwrap();
@@ -297,17 +315,19 @@ mod tests {
         std::fs::write(tmp.path().join("seed.txt"), "x").unwrap();
         let mut gm = GitManager::new();
         gm.initialize_repo(&tmp.path().to_path_buf()).unwrap();
-        gm.commit_changes("init", &tmp.path().to_path_buf()).unwrap();
+        gm.commit_changes("init", &tmp.path().to_path_buf())
+            .unwrap();
         let repo = Repository::open(tmp.path()).unwrap();
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         repo.branch("hive/worker/to-delete", &head, false).unwrap();
         assert!(repo
             .find_branch("hive/worker/to-delete", BranchType::Local)
             .is_ok());
-        assert!(
-            delete_local_feature_branch_after_integrated_merge(tmp.path(), "hive/worker/to-delete")
-                .unwrap()
-        );
+        assert!(delete_local_feature_branch_after_integrated_merge(
+            tmp.path(),
+            "hive/worker/to-delete"
+        )
+        .unwrap());
         let repo2 = Repository::open(tmp.path()).unwrap();
         assert!(repo2
             .find_branch("hive/worker/to-delete", BranchType::Local)

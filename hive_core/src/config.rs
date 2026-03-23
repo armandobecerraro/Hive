@@ -53,10 +53,11 @@ impl HiveConfig {
             .filter(|&n| n > 0)
             .unwrap_or(500);
 
-        let maintainer_reject_before_approve = std::env::var("HIVE_MAINTAINER_REJECT_BEFORE_APPROVE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(1);
+        let maintainer_reject_before_approve =
+            std::env::var("HIVE_MAINTAINER_REJECT_BEFORE_APPROVE")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1);
 
         let max_mr_rejection_attempts = std::env::var("HIVE_MAX_MR_REJECTION_ATTEMPTS")
             .ok()
@@ -81,10 +82,10 @@ impl HiveConfig {
 
     /// `HIVE_DAEMON=1` o `true` activa bucle en el binario (también existe `--daemon`).
     pub fn daemon_from_env() -> bool {
-        match std::env::var("HIVE_DAEMON").as_deref() {
-            Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES") => true,
-            _ => false,
-        }
+        matches!(
+            std::env::var("HIVE_DAEMON").as_deref(),
+            Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+        )
     }
 }
 

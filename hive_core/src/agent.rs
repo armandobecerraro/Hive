@@ -870,6 +870,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         
         let agent = WorkerAgent::new(
@@ -905,6 +907,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
         agent.mark_as_under_review();
@@ -941,6 +945,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
         let msg = agent.execute_task().await.expect("execute");
@@ -987,6 +993,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |p| {
             std::fs::write(p.join("Cargo.toml"), "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n").unwrap();
         });
@@ -995,54 +1003,72 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("javascript", RepositoryProfile {
             languages: vec!["js".into()],
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("typescript", RepositoryProfile {
             languages: vec!["ts".into()],
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("framework_specialist", RepositoryProfile {
             languages: vec![],
             frameworks: vec!["react".into()],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("framework_specialist", RepositoryProfile {
             languages: vec![],
             frameworks: vec!["Vue".into()],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("framework_specialist", RepositoryProfile {
             languages: vec![],
             frameworks: vec!["Svelte".into()],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("debt_specialist", RepositoryProfile {
             languages: vec![],
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("cicd_engineer", RepositoryProfile {
             languages: vec![],
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
         run_execute_case("test_engineer", RepositoryProfile {
             languages: vec![],
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }, |_| {});
     }
 
@@ -1076,6 +1102,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         let mut agent = WorkerAgent::with_evolution(
             task_improve("rust"),
@@ -1115,7 +1143,9 @@ mod tests {
                 frameworks,
                 technical_debt: TechnicalDebtHints::default(),
                 specialists: vec![],
-            };
+            security_issues: vec![],
+            code_patterns: vec![],
+        };
             let mut agent = WorkerAgent::with_evolution(
                 task_improve(key),
                 tmp.path().to_path_buf(),
@@ -1137,6 +1167,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         let mut agent = WorkerAgent::with_evolution(
             task_improve("ext_log"),
@@ -1163,6 +1195,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         let task = WorkerTask {
             id: Uuid::new_v4(),
@@ -1201,6 +1235,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         let task = WorkerTask {
             id: Uuid::new_v4(),
@@ -1237,6 +1273,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: TechnicalDebtHints::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         let task = WorkerTask {
             id: Uuid::new_v4(),

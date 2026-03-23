@@ -1,5 +1,6 @@
 //! The Hive — núcleo de orquestación (colonización, ADN, obreras, Consejo).
 
+// Módulos core
 pub mod config;
 pub mod council;
 pub mod discovery;
@@ -11,7 +12,21 @@ pub mod git_manager;
 pub mod resource_monitor;
 pub mod state;
 
-// Nuevos módulos multi-agente (opcionales, requieren feature "multiagent")
+// Módulos de mejora del enjambre
+pub mod prioritizer;
+pub mod dashboard;
+pub mod worktree_manager;
+pub mod file_lock;
+pub mod checkpoint;
+pub mod model_router;
+pub mod human_in_loop;
+pub mod living_specs;
+pub mod supervisor;
+pub mod tracing_system;
+pub mod sequential_merger;
+pub mod roles;
+
+// Módulos multi-agente (opcionales, requieren feature "multiagent")
 #[cfg(feature = "multiagent")]
 pub mod brain;
 #[cfg(feature = "multiagent")]
@@ -41,10 +56,10 @@ pub(crate) fn purge_dot_hive_worker_artifacts(repo_root: &Path) -> u32 {
         let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
-        if name.starts_with(".hive_worker_") && name.ends_with(".md") {
-            if std::fs::remove_file(&p).is_ok() {
-                removed += 1;
-            }
+        if name.starts_with(".hive_worker_") && name.ends_with(".md")
+            && std::fs::remove_file(&p).is_ok()
+        {
+            removed += 1;
         }
     }
     removed
@@ -189,12 +204,14 @@ mod tests {
         std::env::remove_var("HIVE_CLIENT_FEEDBACK");
         std::env::remove_var("HIVE_REQUEST");
         std::env::remove_var("HIVE_REQUEST_JSON");
+        // Crear un proyecto Rust válido
+        fs::create_dir_all(t.path().join("src")).unwrap();
         fs::write(
             t.path().join("Cargo.toml"),
             "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
         )
         .unwrap();
-        fs::write(t.path().join("main.rs"), "fn main() {}\n").unwrap();
+        fs::write(t.path().join("src/main.rs"), "fn main() {}\n").unwrap();
         fs::write(
             t.path().join(crate::request::CLIENT_FEEDBACK_FILENAME),
             "Añade comentario al main.\n",

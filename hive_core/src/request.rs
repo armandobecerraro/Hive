@@ -66,10 +66,10 @@ impl HiveRequest {
         let p = repo.join(FILENAME);
         if p.exists() {
             let raw = fs::read_to_string(&p).with_context(|| format!("leer {}", p.display()))?;
-            return Ok(serde_json::from_str(&raw).context("hive.request.json inválido")?);
+            return serde_json::from_str(&raw).context("hive.request.json inválido");
         }
         if let Ok(j) = std::env::var("HIVE_REQUEST_JSON") {
-            return Ok(serde_json::from_str(&j).context("HIVE_REQUEST_JSON inválido")?);
+            return serde_json::from_str(&j).context("HIVE_REQUEST_JSON inválido");
         }
         if let Ok(line) = std::env::var("HIVE_REQUEST") {
             return Ok(HiveRequest {
@@ -98,8 +98,7 @@ pub fn read_client_feedback_text(repo: &Path) -> Result<Option<(String, ClientFe
     }
     let p = repo.join(CLIENT_FEEDBACK_FILENAME);
     if p.exists() {
-        let raw = fs::read_to_string(&p)
-            .with_context(|| format!("leer {}", p.display()))?;
+        let raw = fs::read_to_string(&p).with_context(|| format!("leer {}", p.display()))?;
         let t = raw.trim();
         if t.is_empty() {
             return Ok(None);
@@ -111,13 +110,14 @@ pub fn read_client_feedback_text(repo: &Path) -> Result<Option<(String, ClientFe
 
 /// Incorpora el feedback del cliente a la solicitud **en memoria** (no modifica `hive.request.json`).
 /// Si no había pedido previo, el feedback convierte el ciclo en una misión accionable orientada a mejora.
-pub fn integrate_client_feedback(repo: &Path, req: &mut HiveRequest) -> Result<ClientFeedbackSource> {
+pub fn integrate_client_feedback(
+    repo: &Path,
+    req: &mut HiveRequest,
+) -> Result<ClientFeedbackSource> {
     let Some((text, source)) = read_client_feedback_text(repo)? else {
         return Ok(ClientFeedbackSource::None);
     };
-    let block = format!(
-        "\n\n---\n## Petición del cliente (nueva iteración)\n\n{text}\n"
-    );
+    let block = format!("\n\n---\n## Petición del cliente (nueva iteración)\n\n{text}\n");
     if req.is_actionable() {
         req.description.push_str(&block);
     } else {
@@ -141,13 +141,8 @@ pub fn archive_client_feedback_file(repo: &Path) -> Result<()> {
     if dest.exists() {
         dest = dir.join(format!("{stamp}_{}.md", Uuid::new_v4()));
     }
-    fs::rename(&p, &dest).with_context(|| {
-        format!(
-            "archivar feedback: {} -> {}",
-            p.display(),
-            dest.display()
-        )
-    })?;
+    fs::rename(&p, &dest)
+        .with_context(|| format!("archivar feedback: {} -> {}", p.display(), dest.display()))?;
     Ok(())
 }
 
@@ -155,9 +150,7 @@ pub fn archive_client_feedback_file(repo: &Path) -> Result<()> {
 pub fn effective_work_mode(req: &HiveRequest, repo: &Path) -> HiveWorkMode {
     match req.work_mode {
         HiveWorkMode::Auto => {
-            if !req.is_actionable() {
-                HiveWorkMode::Improve
-            } else if manifest_present_for_stack(repo, req) {
+            if !req.is_actionable() || manifest_present_for_stack(repo, req) {
                 HiveWorkMode::Improve
             } else {
                 HiveWorkMode::Build
@@ -191,7 +184,10 @@ pub fn mission_one_liner(req: &HiveRequest) -> String {
 /// Texto para MR / Consejo: objetivo explícito o mejora continua.
 pub fn mission_brief_markdown(req: &HiveRequest) -> String {
     if req.is_actionable() {
-        format!("## Objetivo (hive.request)\n**{}**\n\n{}", req.title, req.description)
+        format!(
+            "## Objetivo (hive.request)\n**{}**\n\n{}",
+            req.title, req.description
+        )
     } else {
         "Sin solicitud en `hive.request.json` (ni `HIVE_REQUEST`): ciclo de **revisión y mejora** del código existente.".into()
     }
@@ -325,7 +321,13 @@ fn slug_package_name(title: &str) -> String {
         out = out.replace("__", "_");
     }
     out = out.trim_matches('_').to_string();
-    if out.is_empty() || !out.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false) {
+    if out.is_empty()
+        || !out
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_alphabetic())
+            .unwrap_or(false)
+    {
         return "hive_app".into();
     }
     out.truncate(32.min(out.len()));
@@ -655,7 +657,10 @@ mod tests {
             ..Default::default()
         };
         bootstrap_if_needed(t.path(), &req).unwrap();
-        assert_eq!(fs::read_to_string(t.path().join("README.md")).unwrap(), "keep");
+        assert_eq!(
+            fs::read_to_string(t.path().join("README.md")).unwrap(),
+            "keep"
+        );
         assert!(fs::read_to_string(t.path().join("version.json"))
             .unwrap()
             .contains("9.9.9"));
@@ -894,7 +899,11 @@ mod tests {
         std::env::remove_var("HIVE_CLIENT_FEEDBACK");
         std::env::set_var("HIVE_CLIENT_FEEDBACK", "texto desde env");
         let t = tempdir().unwrap();
-        fs::write(t.path().join(super::CLIENT_FEEDBACK_FILENAME), "desde disco").unwrap();
+        fs::write(
+            t.path().join(super::CLIENT_FEEDBACK_FILENAME),
+            "desde disco",
+        )
+        .unwrap();
         let (s, src) = super::read_client_feedback_text(t.path()).unwrap().unwrap();
         assert_eq!(s, "texto desde env");
         assert_eq!(src, super::ClientFeedbackSource::Env);
@@ -907,7 +916,11 @@ mod tests {
         std::env::remove_var("HIVE_CLIENT_FEEDBACK");
         std::env::set_var("HIVE_CLIENT_FEEDBACK", "  \n\t ");
         let t = tempdir().unwrap();
-        fs::write(t.path().join(super::CLIENT_FEEDBACK_FILENAME), "desde disco").unwrap();
+        fs::write(
+            t.path().join(super::CLIENT_FEEDBACK_FILENAME),
+            "desde disco",
+        )
+        .unwrap();
         let (s, src) = super::read_client_feedback_text(t.path()).unwrap().unwrap();
         assert!(s.contains("desde disco"));
         assert_eq!(src, super::ClientFeedbackSource::File);

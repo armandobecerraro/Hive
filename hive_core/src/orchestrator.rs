@@ -413,10 +413,12 @@ async fn run_worker_lifecycle(
 
         info!(mr_id = %mr.id, "MR creado; envío al Consejo");
         let (tx, rx) = tokio::sync::oneshot::channel();
+        let repo_root_for_council = repo_root.clone();
         council_tx
             .send(ReviewEnvelope {
                 request: mr.clone(),
                 respond_to: tx,
+                repo_root: repo_root_for_council,
             })
             .await
             .map_err(|_| anyhow!("canal del Consejo cerrado"))?;
@@ -1167,6 +1169,8 @@ mod tests {
             frameworks: vec![],
             technical_debt: Default::default(),
             specialists: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         }
     }
     use crate::state::HiveState;
@@ -1290,6 +1294,8 @@ mod tests {
             manifest_hits: vec![],
             debt: Default::default(),
             dominant_languages: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         dna.extension_histogram.insert("rs".into(), 2);
         let spec = deduce_specialists(&dna)
@@ -1353,6 +1359,8 @@ mod tests {
             manifest_hits: vec![],
             debt: Default::default(),
             dominant_languages: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         dna.extension_histogram.insert("rs".into(), 2);
         let spec = deduce_specialists(&dna)
@@ -1427,6 +1435,8 @@ mod tests {
             manifest_hits: vec![],
             debt: Default::default(),
             dominant_languages: vec![],
+            security_issues: vec![],
+            code_patterns: vec![],
         };
         dna.extension_histogram.insert("rs".into(), 2);
         let spec = deduce_specialists(&dna)

@@ -116,12 +116,10 @@ fn test_maintainer_review_cycle() {
         worker_id: Uuid::new_v4(),
         specialist_key: "rust".into(),
     };
-    let first = m.review(0, &mr);
-    assert!(matches!(
-        first.verdict,
-        CouncilVerdict::Rejected { .. }
-    ));
-    let second = m.review(2, &mr);
+    let tmp = tempfile::tempdir().unwrap();
+    let first = m.review(0, &mr, tmp.path());
+    assert!(matches!(first.verdict, CouncilVerdict::Rejected { .. }));
+    let second = m.review(2, &mr, tmp.path());
     assert!(matches!(second.verdict, CouncilVerdict::Approved));
 }
 

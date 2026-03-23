@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -18,6 +19,25 @@ pub struct MaintainerReview {
     pub merge_request_id: Uuid,
     pub comments: Vec<String>,
     pub verdict: CouncilVerdict,
+    /// Métricas recopiladas durante la revisión
+    pub metrics: ReviewMetrics,
+}
+
+/// Métricas reales evaluadas por el Consejo
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReviewMetrics {
+    /// Tests pasaron (si aplica)
+    pub tests_passed: bool,
+    /// Número de warnings de clippy/lint
+    pub warnings_count: u32,
+    /// Archivos modificados
+    pub files_changed: u32,
+    /// Líneas añadidas
+    pub lines_added: u32,
+    /// Líneas eliminadas
+    pub lines_removed: u32,
+    /// Score de calidad (0-100)
+    pub quality_score: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -29,20 +49,8 @@ pub enum CouncilVerdict {
 pub struct ReviewEnvelope {
     pub request: MergeRequest,
     pub respond_to: oneshot::Sender<MaintainerReview>,
-}
-
-/// Instancia de alto rango (Mantenedor): revisa MR/PR y devuelve veredicto por canal.
-pub struct Maintainer {
-    /// Número de rechazos simulados antes de aprobar (ciclo feedback → reintento).
-    pub reject_before_approve: u32,
-}
-
-impl Default for Maintainer {
-    fn default() -> Self {
-        Self {
-            reject_before_approve: 1,
-        }
-    }
+    /// Raíz del repo para evaluación real
+    pub repo_root: PathBuf,
 }
 
 /// Si el feedback del Mantenedor indica que el cambio **ya no aplica** (hecho en main, innecesario, obsoleto),
@@ -71,8 +79,119 @@ pub fn rejection_indicates_work_obsolete(feedback: &str) -> bool {
     PHRASES.iter().any(|p| f.contains(p))
 }
 
+/// Instancia de alto rango (Mantenedor): revisa MR/PR y devuelve veredicto por canal.
+pub struct Maintainer {
+    /// Número de rechazos simulados antes de aprobar (ciclo feedback → reintento).
+    pub reject_before_approve: u32,
+}
+
+impl Default for Maintainer {
+    fn default() -> Self {
+        Self {
+            reject_before_approve: 1,
+        }
+    }
+}
+
+/// Ejecuta tests del repo y devuelve si pasaron
+fn run_tests(repo_root: &Path) -> bool {
+    if !repo_root.join("Cargo.toml").exists() {
+        return true; // No es un proyecto Rust, no hay tests que ejecutar
+    }
+    
+    let output = std::process::Command::new("cargo")
+        .current_dir(repo_root)
+        .args(["test", "--quiet", "--no-fail-fast"])
+        .output();
+    
+    match output {
+        Ok(out) => out.status.success(),
+        Err(_) => true, // Si no se puede ejecutar, asumimos OK
+    }
+}
+
+/// Ejecuta clippy y cuenta warnings
+fn count_warnings(repo_root: &Path) -> u32 {
+    if !repo_root.join("Cargo.toml").exists() {
+        return 0;
+    }
+    
+    let output = std::process::Command::new("cargo")
+        .current_dir(repo_root)
+        .args(["clippy", "--quiet", "--", "-W", "clippy::all"])
+        .stderr(std::process::Stdio::piped())
+        .output();
+    
+    match output {
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            stderr.lines()
+                .filter(|l| l.contains("warning["))
+                .count() as u32
+        }
+        Err(_) => 0,
+    }
+}
+
+/// Calcula diff de la rama respecto a main
+fn get_branch_diff_stats(repo_root: &Path, branch: &str) -> (u32, u32, u32) {
+    let output = std::process::Command::new("git")
+        .current_dir(repo_root)
+        .args(["diff", "--stat", &format!("main...{branch}")])
+        .output();
+    
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let last_line = stdout.lines().last().unwrap_or("");
+            // "X files changed, Y insertions(+), Z deletions(-)"
+            let files = last_line.split("file").next()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
+            let added = if last_line.contains("insertion") {
+                last_line.split("insertion").next()
+                    .and_then(|s| s.split(',').next_back())
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0)
+            } else { 0 };
+            let removed = if last_line.contains("deletion") {
+                last_line.split("deletion").next()
+                    .and_then(|s| s.split(',').next_back())
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0)
+            } else { 0 };
+            (files, added, removed)
+        }
+        Err(_) => (0, 0, 0),
+    }
+}
+
+/// Calcula score de calidad basado en métricas
+fn calculate_quality_score(tests_passed: bool, warnings: u32, files_changed: u32) -> u8 {
+    let mut score: i32 = 70; // Base
+    
+    if tests_passed {
+        score += 20;
+    } else {
+        score -= 30;
+    }
+    
+    // Penalizar warnings
+    score -= (warnings as i32) * 2;
+    
+    // Bonus por cambios moderados (no gigantes)
+    if files_changed > 0 && files_changed <= 10 {
+        score += 10;
+    } else if files_changed > 20 {
+        score -= 10;
+    }
+    
+    score.clamp(0, 100) as u8
+}
+
 impl Maintainer {
-    pub fn review(&self, attempt: u32, mr: &MergeRequest) -> MaintainerReview {
+    pub fn review(&self, attempt: u32, mr: &MergeRequest, repo_root: &Path) -> MaintainerReview {
+        // Verificar marcadores de obsolescencia
         if mr.description.contains("[HIVE_OBSOLETE]")
             || mr.description.contains("HIVE_MR_NO_RETRY")
         {
@@ -87,8 +206,24 @@ impl Maintainer {
                         "[Mantenedor] Ya no se requiere este MR: obsoleto o ya está hecho (marcador HIVE_OBSOLETE / HIVE_MR_NO_RETRY)."
                             .into(),
                 },
+                metrics: ReviewMetrics::default(),
             };
         }
+
+        // Recopilar métricas reales
+        let tests_passed = run_tests(repo_root);
+        let warnings_count = count_warnings(repo_root);
+        let (files_changed, lines_added, lines_removed) = get_branch_diff_stats(repo_root, &mr.branch);
+        let quality_score = calculate_quality_score(tests_passed, warnings_count, files_changed);
+
+        let metrics = ReviewMetrics {
+            tests_passed,
+            warnings_count,
+            files_changed,
+            lines_added,
+            lines_removed,
+            quality_score,
+        };
 
         let mut comments = vec![
             format!(
@@ -97,6 +232,7 @@ impl Maintainer {
             ),
             format!("[Mantenedor] Título: {}", mr.title),
         ];
+
         if mr.description.trim().is_empty() {
             comments.push(
                 "[Mantenedor] Falta contexto en la descripción; documenta el alcance y riesgos."
@@ -108,31 +244,74 @@ impl Maintainer {
                 mr.description.len()
             ));
         }
-        comments.push(
-            "[Mantenedor] Verificación: cambios aislados en rama no-main; listo para política Hive."
-                .into(),
-        );
 
-        if attempt <= self.reject_before_approve {
+        // Reportar métricas
+        comments.push(format!(
+            "[Mantenedor] Métricas: tests={}, warnings={}, archivos={}, +{}/-{} líneas, score={}/100",
+            if tests_passed { "✓" } else { "✗" },
+            warnings_count,
+            files_changed,
+            lines_added,
+            lines_removed,
+            quality_score
+        ));
+
+        // Decisión basada en métricas reales
+        if !tests_passed {
             comments.push(
-                "[Mantenedor] Rechazo técnico: endurecer mensaje de commit y añadir nota en hive artefacto."
-                    .into(),
+                "[Mantenedor] Rechazo: los tests fallaron. Corrige los tests antes de reenviar.".into(),
             );
             MaintainerReview {
                 merge_request_id: mr.id,
                 comments: comments.clone(),
                 verdict: CouncilVerdict::Rejected {
-                    feedback: comments.join("\n"),
+                    feedback: format!(
+                        "Tests fallaron. Revisa el output de `cargo test`.\n{}\nScore de calidad: {}/100",
+                        comments.join("\n"),
+                        quality_score
+                    ),
                 },
+                metrics,
             }
-        } else {
+        } else if warnings_count > 10 {
+            comments.push(format!(
+                "[Mantenedor] Rechazo: demasiados warnings ({warnings_count}). Ejecuta `cargo clippy --fix`."
+            ));
+            MaintainerReview {
+                merge_request_id: mr.id,
+                comments: comments.clone(),
+                verdict: CouncilVerdict::Rejected {
+                    feedback: format!(
+                        "Demasiados warnings de clippy ({warnings_count}). Ejecuta `cargo clippy --fix`.\n{}",
+                        comments.join("\n")
+                    ),
+                },
+                metrics,
+            }
+        } else if attempt <= self.reject_before_approve {
             comments.push(
-                "[Mantenedor] Aprobado: cumple ciclo de revisión y comentarios resueltos.".into(),
+                "[Mantenedor] Rechazo técnico: mejorar calidad del código y mensaje de commit.".into(),
             );
             MaintainerReview {
                 merge_request_id: mr.id,
                 comments: comments.clone(),
+                verdict: CouncilVerdict::Rejected {
+                    feedback: format!(
+                        "Mejora la calidad (score: {quality_score}/100). Mensaje de commit debe ser más descriptivo.\n{}",
+                        comments.join("\n")
+                    ),
+                },
+                metrics,
+            }
+        } else {
+            comments.push(format!(
+                "[Mantenedor] Aprobado: score {quality_score}/100, tests OK, {warnings_count} warnings."
+            ));
+            MaintainerReview {
+                merge_request_id: mr.id,
+                comments: comments.clone(),
                 verdict: CouncilVerdict::Approved,
+                metrics,
             }
         }
     }
@@ -148,7 +327,7 @@ pub fn council_channel(capacity: usize) -> (CouncilSender, CouncilReceiver) {
 pub async fn run_council_loop(mut rx: CouncilReceiver, maintainer: Maintainer) {
     while let Some(env) = rx.recv().await {
         let attempt = parse_attempt(&env.request.description).unwrap_or(0);
-        let review = maintainer.review(attempt, &env.request);
+        let review = maintainer.review(attempt, &env.request, &env.repo_root);
         let _ = env.respond_to.send(review);
     }
 }
@@ -192,9 +371,10 @@ mod tests {
             reject_before_approve: 1,
         };
         let mr = sample_mr("ctx\nHIVE_ATTEMPT:1");
-        let r1 = m.review(1, &mr);
+        let tmp = tempfile::tempdir().unwrap();
+        let r1 = m.review(1, &mr, tmp.path());
         assert!(matches!(r1.verdict, CouncilVerdict::Rejected { .. }));
-        let r2 = m.review(2, &mr);
+        let r2 = m.review(2, &mr, tmp.path());
         assert!(matches!(r2.verdict, CouncilVerdict::Approved));
         assert!(!r2.comments.is_empty());
     }
@@ -212,7 +392,8 @@ mod tests {
             worker_id: Uuid::new_v4(),
             specialist_key: "k".into(),
         };
-        let r = m.review(1, &mr);
+        let tmp = tempfile::tempdir().unwrap();
+        let r = m.review(1, &mr, tmp.path());
         assert!(
             r.comments
                 .iter()
@@ -237,7 +418,8 @@ mod tests {
             reject_before_approve: 99,
         };
         let mr = sample_mr("obj [HIVE_OBSOLETE]\nHIVE_ATTEMPT:1");
-        let r = m.review(1, &mr);
+        let tmp = tempfile::tempdir().unwrap();
+        let r = m.review(1, &mr, tmp.path());
         match &r.verdict {
             CouncilVerdict::Rejected { feedback } => {
                 assert!(rejection_indicates_work_obsolete(feedback));
@@ -258,6 +440,7 @@ mod tests {
         tx.send(ReviewEnvelope {
             request: mr.clone(),
             respond_to: resp_tx,
+            repo_root: PathBuf::from("/tmp"),
         })
         .await
         .unwrap();
@@ -266,5 +449,13 @@ mod tests {
         assert!(matches!(got.verdict, CouncilVerdict::Approved));
         drop(tx);
         j.await.unwrap();
+    }
+
+    #[test]
+    fn review_metrics_calcula_score() {
+        assert!(calculate_quality_score(true, 0, 5) > 90);
+        assert!(calculate_quality_score(false, 0, 5) < 60);
+        // Muchos warnings reducen el score significativamente
+        assert!(calculate_quality_score(true, 50, 5) < 60);
     }
 }

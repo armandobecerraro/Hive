@@ -5,17 +5,12 @@ use crate::request::HiveWorkMode;
 use uuid::Uuid;
 
 /// Política de rama obrera: **derivada** de `main` o **huérfana** (raíz sin padre en la rama obrera).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WorkerBranchMode {
+    #[default]
     DerivedFromMain,
     /// Primera revisión en la rama es un commit sin padres; fusión a `main` con ancestro vacío.
     OrphanRoot,
-}
-
-impl Default for WorkerBranchMode {
-    fn default() -> Self {
-        WorkerBranchMode::DerivedFromMain
-    }
 }
 
 #[derive(Debug, Clone)]
