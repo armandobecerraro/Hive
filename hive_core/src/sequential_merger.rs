@@ -2,6 +2,10 @@
 //!
 //! Inspirado en Augment Intent: mergea ramas **en orden secuencial** para
 //! detectar conflictos temprano y prevenir que el repo quede en un estado roto.
+//!
+//! La rama base es configurable (`SequentialMerger::new(..., base_branch)`). El flujo principal
+//! de La Reina integra en [`HiveConfig::integration_branch`](crate::config::HiveConfig) vía
+//! `orchestrator`; este módulo no participa en ese merge salvo que se instancie con la misma base.
 
 use anyhow::Result;
 use git2::{BranchType, Repository};

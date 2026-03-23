@@ -1,5 +1,6 @@
 //! Configuración por variables de entorno (documentadas en README o comentarios).
 
+use anyhow::Result;
 use std::time::Duration;
 
 /// Ajustes de runtime para La Reina, el Consejo y retención de `hive.json`.
@@ -13,10 +14,14 @@ pub struct HiveConfig {
     pub max_version_history_entries: usize,
     /// Rechazos simulados del Mantenedor antes del primer approve (por MR).
     pub maintainer_reject_before_approve: u32,
-    /// Tras tantos rechazos del Consejo sobre la misma obrera, se **descarta** el trabajo (borra rama, vuelve a `main`) y la cola **sigue** con otras tareas (evita bucles infinitos).
+    /// Tras tantos rechazos del Consejo sobre la misma obrera, se **descarta** el trabajo (borra rama, vuelve a la línea de integración) y la cola **sigue** con otras tareas (evita bucles infinitos).
     pub max_mr_rejection_attempts: u32,
     /// Si es true, antes de enviar el MR al Consejo ejecuta `cargo test` en repos con `Cargo.toml` (fallo → no se abre MR y se reintenta como rechazo lógico vía error en la obrera).
     pub run_tests_before_mr: bool,
+    /// Si es true, el enjambre no escribe ni fusiona en `main`; los merges y commits de hitos van a [`Self::integration_branch`].
+    pub protect_main: bool,
+    /// Rama donde convergen merges aprobados y `HIVE_OBJECTIVE.md` (por defecto `main` si `protect_main` es false, o `hive/integration` si es true y no se define env).
+    pub integration_branch: String,
 }
 
 impl Default for HiveConfig {
@@ -28,11 +33,29 @@ impl Default for HiveConfig {
             maintainer_reject_before_approve: 1,
             max_mr_rejection_attempts: 10,
             run_tests_before_mr: false,
+            protect_main: false,
+            integration_branch: "main".to_string(),
         }
     }
 }
 
 impl HiveConfig {
+    /// Comprueba coherencia de política (p. ej. no usar `main` como rama de integración si `main` está protegida).
+    pub fn validate(&self) -> Result<()> {
+        if self.protect_main {
+            let ib = self.integration_branch.trim();
+            if ib.is_empty() {
+                anyhow::bail!("HIVE_INTEGRATION_BRANCH vacío con HIVE_PROTECT_MAIN activo");
+            }
+            if ib == "main" || ib == "master" {
+                anyhow::bail!(
+                    "con HIVE_PROTECT_MAIN=1, HIVE_INTEGRATION_BRANCH no puede ser `main` ni `master`; use p. ej. `hive/integration`"
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Lee variables de entorno; valores inválidos ignorados → default del campo.
     pub fn from_env() -> Self {
         let poll_secs = std::env::var("HIVE_POLL_INTERVAL_SECS")
@@ -70,6 +93,33 @@ impl HiveConfig {
             Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
         );
 
+        let protect_main = matches!(
+            std::env::var("HIVE_PROTECT_MAIN").as_deref(),
+            Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+        );
+
+        let integration_branch = match std::env::var("HIVE_INTEGRATION_BRANCH") {
+            Ok(s) => {
+                let t = s.trim();
+                if t.is_empty() {
+                    if protect_main {
+                        "hive/integration".to_string()
+                    } else {
+                        "main".to_string()
+                    }
+                } else {
+                    t.to_string()
+                }
+            }
+            Err(_) => {
+                if protect_main {
+                    "hive/integration".to_string()
+                } else {
+                    "main".to_string()
+                }
+            }
+        };
+
         Self {
             poll_interval: Duration::from_secs(poll_secs),
             max_decision_records,
@@ -77,6 +127,8 @@ impl HiveConfig {
             maintainer_reject_before_approve,
             max_mr_rejection_attempts,
             run_tests_before_mr,
+            protect_main,
+            integration_branch,
         }
     }
 
@@ -102,6 +154,9 @@ mod tests {
         assert_eq!(c.maintainer_reject_before_approve, 1);
         assert_eq!(c.max_mr_rejection_attempts, 10);
         assert!(!c.run_tests_before_mr);
+        assert!(!c.protect_main);
+        assert_eq!(c.integration_branch, "main");
+        assert!(c.validate().is_ok());
     }
 
     #[test]
@@ -208,5 +263,49 @@ mod tests {
         let c = HiveConfig::from_env();
         std::env::remove_var("HIVE_RUN_TESTS_BEFORE_MR");
         assert!(c.run_tests_before_mr);
+    }
+
+    #[test]
+    #[serial]
+    fn from_env_protect_main_sets_default_integration() {
+        std::env::set_var("HIVE_PROTECT_MAIN", "1");
+        std::env::remove_var("HIVE_INTEGRATION_BRANCH");
+        let c = HiveConfig::from_env();
+        std::env::remove_var("HIVE_PROTECT_MAIN");
+        assert!(c.protect_main);
+        assert_eq!(c.integration_branch, "hive/integration");
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn from_env_integration_branch_explicit() {
+        std::env::set_var("HIVE_PROTECT_MAIN", "1");
+        std::env::set_var("HIVE_INTEGRATION_BRANCH", "hive/queen-line");
+        let c = HiveConfig::from_env();
+        std::env::remove_var("HIVE_PROTECT_MAIN");
+        std::env::remove_var("HIVE_INTEGRATION_BRANCH");
+        assert_eq!(c.integration_branch, "hive/queen-line");
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_main_as_integration_when_protected() {
+        let c = HiveConfig {
+            protect_main: true,
+            integration_branch: "main".into(),
+            ..HiveConfig::default()
+        };
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_master_as_integration_when_protected() {
+        let c = HiveConfig {
+            protect_main: true,
+            integration_branch: "master".into(),
+            ..HiveConfig::default()
+        };
+        assert!(c.validate().is_err());
     }
 }

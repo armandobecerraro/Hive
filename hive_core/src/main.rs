@@ -151,6 +151,8 @@ async fn main() -> Result<()> {
     }
 
     let cfg = HiveConfig::from_env();
+    cfg.validate()
+        .context("configuración Hive (HIVE_PROTECT_MAIN / HIVE_INTEGRATION_BRANCH)")?;
     let target = cli.target.clone();
 
     if let Some(ref description) = cli.ask {

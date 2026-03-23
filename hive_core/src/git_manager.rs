@@ -141,6 +141,10 @@ impl GitManager {
     }
 
     /// Resuelve `main` o `master` según lo que exista en el repo (Git por defecto).
+    ///
+    /// **Nota:** el orquestador principal (`orchestrator.rs`) usa la rama configurada en
+    /// [`HiveConfig::integration_branch`](crate::config::HiveConfig) (p. ej. `hive/integration` con
+    /// `HIVE_PROTECT_MAIN`). `GitManager::merge_branch` es utilidad genérica para demos/tests.
     fn default_integration_branch(
         repo: &Repository,
     ) -> Result<&'static str, Box<dyn std::error::Error>> {

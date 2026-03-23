@@ -101,6 +101,7 @@ fn cleanup_legacy_hive_worker_md(repo_root: &Path) {
 
 /// Un ciclo completo: análisis ADN, Consejo, cola de obreras (todas las tareas por especialista).
 pub async fn run_queen_cycle(target: PathBuf, cfg: &HiveConfig) -> Result<()> {
+    cfg.validate()?;
     cleanup_legacy_hive_worker_md(&target);
 
     let mut hive_request = crate::request::HiveRequest::resolve(&target)?;

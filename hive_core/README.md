@@ -79,6 +79,15 @@ See `examples/hive.json` for the complete schema including:
 - Council decisions
 - System settings
 
+### Variables de entorno (política de ramas)
+
+| Variable | Efecto |
+|----------|--------|
+| `HIVE_PROTECT_MAIN` | `1` / `true` / `yes`: el enjambre **no** escribe ni fusiona en `main`; merges y hitos van a la rama de integración. |
+| `HIVE_INTEGRATION_BRANCH` | Nombre de esa rama (por defecto `main` si `HIVE_PROTECT_MAIN` está desactivado; si está activado y no se define, `hive/integration`). Con `HIVE_PROTECT_MAIN=1` **no** puede ser `main` ni `master` (error al arrancar). |
+
+La protección de rama en GitHub/GitLab es **complementaria**: evita pushes accidentales al remoto; esta política controla el comportamiento local del orquestador.
+
 ### Cargo.toml Dependencies
 - `git2` - Git operations
 - `tokio` - Async runtime

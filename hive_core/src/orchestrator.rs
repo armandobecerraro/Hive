@@ -40,6 +40,7 @@ impl HiveOrchestrator {
         hive_request: &HiveRequest,
         work_mode: HiveWorkMode,
     ) -> Result<()> {
+        cfg.validate()?;
         let target = self.target.clone();
         let specialists = self.profile.specialists.clone();
 
@@ -72,6 +73,7 @@ impl HiveOrchestrator {
 
         let one = request::mission_one_liner(hive_request);
         let brief = request::mission_brief_markdown(hive_request);
+        let dest = cfg.integration_branch.as_str();
 
         let tasks: Vec<WorkerTask> = specialists
             .into_iter()
@@ -81,12 +83,12 @@ impl HiveOrchestrator {
                     HiveWorkMode::Improve => {
                         if one.is_empty() {
                             format!(
-                                "Revisión y mejora [{}] — MR → Consejo → main",
+                                "Revisión y mejora [{}] — MR → Consejo → {dest}",
                                 specialist.language_key
                             )
                         } else {
                             format!(
-                                "Revisión y mejora [{}] · {} — MR → Consejo → main",
+                                "Revisión y mejora [{}] · {} — MR → Consejo → {dest}",
                                 specialist.language_key, one
                             )
                         }
@@ -94,19 +96,19 @@ impl HiveOrchestrator {
                     HiveWorkMode::Build => {
                         if one.is_empty() {
                             format!(
-                                "Construcción [{}] — MR → Consejo → main",
+                                "Construcción [{}] — MR → Consejo → {dest}",
                                 specialist.language_key
                             )
                         } else {
                             format!(
-                                "Construcción [{}] · {} — MR → Consejo → main",
+                                "Construcción [{}] · {} — MR → Consejo → {dest}",
                                 specialist.language_key, one
                             )
                         }
                     }
                     HiveWorkMode::Auto => {
                         format!(
-                            "Artefacto obrero ({}) — MR → Consejo → main",
+                            "Artefacto obrero ({}) — MR → Consejo → {dest}",
                             specialist.language_key
                         )
                     }
@@ -139,6 +141,8 @@ impl HiveOrchestrator {
             profile: self.profile.clone(),
             max_mr_rejection_attempts: cfg.max_mr_rejection_attempts,
             run_tests_before_mr: cfg.run_tests_before_mr,
+            protect_main: cfg.protect_main,
+            integration_branch: cfg.integration_branch.clone(),
         };
 
         run_worker_queue(orchestrator, tasks, hive_state.clone()).await?;
@@ -210,6 +214,10 @@ pub struct Orchestrator {
     pub profile: RepositoryProfile,
     pub max_mr_rejection_attempts: u32,
     pub run_tests_before_mr: bool,
+    /// Si es true, merges y hitos van a `integration_branch`, no a `main`.
+    pub protect_main: bool,
+    /// Rama destino de merges aprobados y documentación de hitos.
+    pub integration_branch: String,
 }
 
 impl Orchestrator {
@@ -233,9 +241,19 @@ impl Orchestrator {
         let profile = self.profile.clone();
         let max_mr = self.max_mr_rejection_attempts;
         let run_tests = self.run_tests_before_mr;
+        let protect_main = self.protect_main;
+        let integration_branch = self.integration_branch.clone();
         let handle = tokio::spawn(async move {
             run_worker_lifecycle(
-                repo_root, council_tx, task, state, profile, max_mr, run_tests,
+                repo_root,
+                council_tx,
+                task,
+                state,
+                profile,
+                max_mr,
+                run_tests,
+                protect_main,
+                integration_branch,
             )
             .await
         });
@@ -255,7 +273,8 @@ fn hive_signature(name: &'static str, email: &'static str) -> Result<Signature<'
     Signature::new(name, email, &time).context("firma git")
 }
 
-/// Ciclo tipo GitLab/GitHub: rama por obrera → commits en esa rama → MR (revisión Consejo) → merge a `main` → borrar rama local.
+/// Ciclo tipo GitLab/GitHub: rama por obrera → commits en esa rama → MR (revisión Consejo) → merge a la línea de integración → borrar rama local.
+#[allow(clippy::too_many_arguments)] // parámetros de política Git + ciclo MR explícitos
 async fn run_worker_lifecycle(
     repo_root: PathBuf,
     council_tx: CouncilSender,
@@ -264,6 +283,8 @@ async fn run_worker_lifecycle(
     profile: RepositoryProfile,
     max_mr_rejection_attempts: u32,
     run_tests_before_mr: bool,
+    protect_main: bool,
+    integration_branch: String,
 ) -> Result<()> {
     let branch = format!("hive/worker/{}", task.id);
     let mut attempt: u32 = 1;
@@ -300,9 +321,11 @@ async fn run_worker_lifecycle(
             let title = task.title.clone();
             let tid = task.id;
             let mode = task.branch_mode;
+            let pm = protect_main;
+            let ib = integration_branch.clone();
             info!(attempt, "commit artefacto obrero (rama huérfana inicial)");
             tokio::task::spawn_blocking(move || {
-                worker_commit_on_branch(&rr, &b, &spec, &title, tid, attempt, mode)
+                worker_commit_on_branch(&rr, &b, &spec, &title, tid, attempt, mode, pm, &ib)
             })
             .await
             .context("join worker_commit")??;
@@ -311,9 +334,13 @@ async fn run_worker_lifecycle(
             let b = branch.clone();
             let mode = task.branch_mode;
             let att = attempt;
-            tokio::task::spawn_blocking(move || ensure_on_worker_branch(&rr, &b, mode, att))
-                .await
-                .context("join ensure branch")??;
+            let pm = protect_main;
+            let ib = integration_branch.clone();
+            tokio::task::spawn_blocking(move || {
+                ensure_on_worker_branch(&rr, &b, mode, att, pm, &ib)
+            })
+            .await
+            .context("join ensure branch")??;
 
             let mut agent = WorkerAgent::with_evolution(
                 task.clone(),
@@ -437,9 +464,10 @@ async fn run_worker_lifecycle(
                 let merge_mode = task.branch_mode;
                 let mr_id = mr.id;
                 let specialist_key = task.specialist.language_key.clone();
+                let target = integration_branch.clone();
                 tokio::task::spawn_blocking(move || {
-                    merge_branch_into_main(&repo_root2, &branch2, merge_mode)?;
-                    bump_version_json(&repo_root2)?;
+                    merge_branch_into_target(&repo_root2, &branch2, merge_mode, &target)?;
+                    bump_version_json(&repo_root2, &target)?;
                     let ver = read_version_from_disk(&repo_root2)?;
                     commit_hive_objective_milestone(
                         &repo_root2,
@@ -447,6 +475,7 @@ async fn run_worker_lifecycle(
                         &branch2,
                         mr_id,
                         &specialist_key,
+                        &target,
                     )?;
                     Ok::<_, anyhow::Error>(mr_id)
                 })
@@ -480,6 +509,7 @@ async fn run_worker_lifecycle(
                     let br_obs = branch.clone();
                     let wid_obs = task.id;
                     let sk_obs = task.specialist.language_key.clone();
+                    let line_obs = integration_branch.clone();
                     tokio::task::spawn_blocking(move || {
                         append_feedback_note(&repo_obs, &fb_obs, att)?;
                         abandon_worker_mr(
@@ -488,6 +518,7 @@ async fn run_worker_lifecycle(
                             wid_obs,
                             &sk_obs,
                             "trabajo obsoleto o ya no requerido (sin reintentos)",
+                            &line_obs,
                         )
                     })
                     .await
@@ -537,6 +568,7 @@ async fn run_worker_lifecycle(
                     let br = branch.clone();
                     let wid = task.id;
                     let sk = task.specialist.language_key.clone();
+                    let line_ab = integration_branch.clone();
                     tokio::task::spawn_blocking(move || {
                         abandon_worker_mr(
                             &rr,
@@ -544,6 +576,7 @@ async fn run_worker_lifecycle(
                             wid,
                             &sk,
                             "máximo de rechazos del Consejo alcanzado",
+                            &line_ab,
                         )
                     })
                     .await
@@ -620,23 +653,27 @@ async fn read_version_string(repo_root: &Path) -> Result<String> {
         .context("join read_version")?
 }
 
-/// Tras cada merge a `main`, deja una línea verificable del **objetivo** (integración revisada + versión).
+/// Tras cada merge a la línea de integración, deja una línea verificable del **objetivo** (integración revisada + versión).
 fn commit_hive_objective_milestone(
     repo_root: &Path,
     version: &str,
     merged_branch: &str,
     mr_id: Uuid,
     specialist_key: &str,
+    integration_branch: &str,
 ) -> Result<()> {
     let p = repo_root.join("HIVE_OBJECTIVE.md");
-    let header = "# Objetivo operativo (Hive)\n\n\
-        **Meta:** integrar en `main` cambios generados por cada especialista, pasando revisión del Consejo, \
+    let header = format!(
+        "# Objetivo operativo (Hive)\n\n\
+        **Meta:** integrar en `{ib}` cambios generados por cada especialista, pasando revisión del Consejo, \
         y subir la versión en `version.json`.\n\n\
-        ## Hitos en `main`\n\n";
+        ## Hitos en `{ib}`\n\n",
+        ib = integration_branch
+    );
     let mut body = if p.exists() {
         std::fs::read_to_string(&p)?
     } else {
-        header.to_string()
+        header
     };
     let dedupe_key = format!("rama `{merged_branch}` · MR `{mr_id}`");
     if body.contains(&dedupe_key) {
@@ -650,7 +687,7 @@ fn commit_hive_objective_milestone(
     std::fs::write(&p, &body)?;
 
     let repo = Repository::open(repo_root)?;
-    checkout_branch(&repo, "main")?;
+    checkout_branch(&repo, integration_branch)?;
     let sig = hive_signature("The Hive", "objective@hive.local")?;
     let head = repo.head()?.peel_to_commit()?;
     let mut index = repo.index()?;
@@ -699,14 +736,20 @@ fn ensure_on_worker_branch(
     branch: &str,
     branch_mode: WorkerBranchMode,
     attempt: u32,
+    protect_main: bool,
+    integration_branch: &str,
 ) -> Result<()> {
     ensure_mainline_seed(repo_root)?;
+    ensure_integration_branch(repo_root, integration_branch, protect_main)?;
     let repo = Repository::open(repo_root)?;
     if branch_mode == WorkerBranchMode::OrphanRoot && attempt == 1 && !branch_exists(&repo, branch)?
     {
         return Err(anyhow!(
             "ensure_on_worker_branch: huérfano inicial debe usar worker_commit_on_branch"
         ));
+    }
+    if protect_main {
+        checkout_branch(&repo, integration_branch)?;
     }
     let head = repo.head()?.peel_to_commit()?;
     if branch_exists(&repo, branch)? {
@@ -763,6 +806,7 @@ fn worker_stage_workspace_commit(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn worker_commit_on_branch(
     repo_root: &Path,
     branch: &str,
@@ -771,8 +815,11 @@ fn worker_commit_on_branch(
     worker_id: Uuid,
     attempt: u32,
     branch_mode: WorkerBranchMode,
+    protect_main: bool,
+    integration_branch: &str,
 ) -> Result<()> {
     ensure_mainline_seed(repo_root)?;
+    ensure_integration_branch(repo_root, integration_branch, protect_main)?;
     let repo = Repository::open(repo_root)?;
 
     let n = crate::purge_dot_hive_worker_artifacts(repo_root);
@@ -790,7 +837,8 @@ fn worker_commit_on_branch(
 
     if branch_mode == WorkerBranchMode::OrphanRoot && attempt == 1 && !branch_exists(&repo, branch)?
     {
-        checkout_branch(&repo, "main")?;
+        let base = orphan_initial_base_branch(&repo, protect_main, integration_branch)?;
+        checkout_branch(&repo, &base)?;
         let mut index = repo.index()?;
         index.clear()?;
         index.add_path(
@@ -812,6 +860,10 @@ fn worker_commit_on_branch(
         checkout_branch(&repo, branch)?;
         crate::purge_dot_hive_worker_artifacts(repo_root);
         return Ok(());
+    }
+
+    if protect_main {
+        checkout_branch(&repo, integration_branch)?;
     }
 
     let head = repo.head()?.peel_to_commit()?;
@@ -866,6 +918,64 @@ fn checkout_branch(repo: &Repository, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// `main` o `master`, según exista (bootstrap clásico).
+fn default_mainline_branch_name(repo: &Repository) -> Result<&'static str> {
+    if branch_exists(repo, "main")? {
+        Ok("main")
+    } else if branch_exists(repo, "master")? {
+        Ok("master")
+    } else {
+        Err(anyhow!(
+            "no hay rama main ni master (necesaria para línea de trabajo)"
+        ))
+    }
+}
+
+/// Con `protect_main`, crea `integration_branch` apuntando al mismo commit que `main`/`master` sin modificar esas ramas.
+fn ensure_integration_branch(
+    repo_root: &Path,
+    integration_branch: &str,
+    protect_main: bool,
+) -> Result<()> {
+    if !protect_main {
+        return Ok(());
+    }
+    let repo = Repository::open(repo_root)?;
+    if branch_exists(&repo, integration_branch)? {
+        return Ok(());
+    }
+    let base_commit = if branch_exists(&repo, "main")? {
+        repo.find_reference("refs/heads/main")
+            .context("refs/heads/main")?
+            .peel_to_commit()?
+    } else if branch_exists(&repo, "master")? {
+        repo.find_reference("refs/heads/master")
+            .context("refs/heads/master")?
+            .peel_to_commit()?
+    } else {
+        return Err(anyhow!(
+            "HIVE_PROTECT_MAIN: se requiere rama `main` o `master` para crear `{integration_branch}`"
+        ));
+    };
+    repo.branch(integration_branch, &base_commit, false)?;
+    Ok(())
+}
+
+fn orphan_initial_base_branch(
+    repo: &Repository,
+    protect_main: bool,
+    integration_branch: &str,
+) -> Result<String> {
+    if protect_main {
+        if !branch_exists(repo, integration_branch)? {
+            anyhow::bail!("falta rama de integración `{integration_branch}`");
+        }
+        Ok(integration_branch.to_string())
+    } else {
+        Ok(default_mainline_branch_name(repo)?.to_string())
+    }
+}
+
 fn checkout_main_or_master(repo: &Repository) -> Result<()> {
     if branch_exists(repo, "main")? {
         checkout_branch(repo, "main")
@@ -878,16 +988,21 @@ fn checkout_main_or_master(repo: &Repository) -> Result<()> {
     }
 }
 
-/// Tras demasiados rechazos: vuelve a la línea principal, borra la rama obrera y deja constancia (sin fusionar a `main`).
+/// Tras demasiados rechazos: vuelve a la línea de integración, borra la rama obrera y deja constancia (sin fusionar).
 fn abandon_worker_mr(
     repo_root: &Path,
     worker_branch: &str,
     worker_id: Uuid,
     specialist_key: &str,
     reason: &str,
+    integration_line: &str,
 ) -> Result<()> {
     let repo = Repository::open(repo_root)?;
-    checkout_main_or_master(&repo)?;
+    if branch_exists(&repo, integration_line)? {
+        checkout_branch(&repo, integration_line)?;
+    } else {
+        checkout_main_or_master(&repo)?;
+    }
     let _ = crate::git_manager::delete_local_feature_branch_after_integrated_merge(
         repo_root,
         worker_branch,
@@ -976,26 +1091,34 @@ fn ensure_mainline_seed(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn merge_branch_into_main(
+fn merge_branch_into_target(
     repo_root: &Path,
     worker_branch: &str,
     branch_mode: WorkerBranchMode,
+    target_branch: &str,
 ) -> Result<()> {
     match branch_mode {
         WorkerBranchMode::DerivedFromMain => {
-            merge_derived_worker_into_main(repo_root, worker_branch)
+            merge_derived_worker_into_target(repo_root, worker_branch, target_branch)
         }
-        WorkerBranchMode::OrphanRoot => merge_orphan_worker_into_main(repo_root, worker_branch),
+        WorkerBranchMode::OrphanRoot => {
+            merge_orphan_worker_into_target(repo_root, worker_branch, target_branch)
+        }
     }
 }
 
-fn merge_derived_worker_into_main(repo_root: &Path, worker_branch: &str) -> Result<()> {
+fn merge_derived_worker_into_target(
+    repo_root: &Path,
+    worker_branch: &str,
+    target_branch: &str,
+) -> Result<()> {
     let repo = Repository::open(repo_root)?;
     let sig = hive_signature("The Queen", "queen@hive.local")?;
 
+    let ref_target = format!("refs/heads/{target_branch}");
     let main_commit = repo
-        .find_reference("refs/heads/main")
-        .context("refs/heads/main")?
+        .find_reference(&ref_target)
+        .with_context(|| ref_target.clone())?
         .peel_to_commit()?;
     let worker_commit = repo
         .find_branch(worker_branch, BranchType::Local)
@@ -1009,7 +1132,7 @@ fn merge_derived_worker_into_main(repo_root: &Path, worker_branch: &str) -> Resu
     }
     let tree_id = idx.write_tree_to(&repo)?;
     let tree = repo.find_tree(tree_id)?;
-    checkout_branch(&repo, "main")?;
+    checkout_branch(&repo, target_branch)?;
     let merge_commit = repo.commit(
         Some("HEAD"),
         &sig,
@@ -1019,7 +1142,7 @@ fn merge_derived_worker_into_main(repo_root: &Path, worker_branch: &str) -> Resu
         &[&main_commit, &worker_commit],
     )?;
 
-    repo.set_head("refs/heads/main")?;
+    repo.set_head(&ref_target)?;
     repo.checkout_head(Some(
         git2::build::CheckoutBuilder::default()
             .force()
@@ -1038,13 +1161,18 @@ fn merge_derived_worker_into_main(repo_root: &Path, worker_branch: &str) -> Resu
 }
 
 /// Fusión de historiales sin ancestro común (equivalente a `--allow-unrelated-histories`): ancestro = árbol vacío estándar.
-fn merge_orphan_worker_into_main(repo_root: &Path, worker_branch: &str) -> Result<()> {
+fn merge_orphan_worker_into_target(
+    repo_root: &Path,
+    worker_branch: &str,
+    target_branch: &str,
+) -> Result<()> {
     let repo = Repository::open(repo_root)?;
     let sig = hive_signature("The Queen", "queen@hive.local")?;
 
+    let ref_target = format!("refs/heads/{target_branch}");
     let main_commit = repo
-        .find_reference("refs/heads/main")
-        .context("refs/heads/main")?
+        .find_reference(&ref_target)
+        .with_context(|| ref_target.clone())?
         .peel_to_commit()?;
     let worker_commit = repo
         .find_branch(worker_branch, BranchType::Local)
@@ -1061,12 +1189,12 @@ fn merge_orphan_worker_into_main(repo_root: &Path, worker_branch: &str) -> Resul
     let mut idx = repo.merge_trees(&ancestor_tree, &ours_tree, &theirs_tree, None)?;
     if idx.has_conflicts() {
         return Err(anyhow!(
-            "conflictos en merge huérfano ↔ main; intervención manual"
+            "conflictos en merge huérfano ↔ {target_branch}; intervención manual"
         ));
     }
     let tree_id = idx.write_tree_to(&repo)?;
     let tree = repo.find_tree(tree_id)?;
-    checkout_branch(&repo, "main")?;
+    checkout_branch(&repo, target_branch)?;
     let merge_commit = repo.commit(
         Some("HEAD"),
         &sig,
@@ -1076,7 +1204,7 @@ fn merge_orphan_worker_into_main(repo_root: &Path, worker_branch: &str) -> Resul
         &[&main_commit, &worker_commit],
     )?;
 
-    repo.set_head("refs/heads/main")?;
+    repo.set_head(&ref_target)?;
     repo.checkout_head(Some(
         git2::build::CheckoutBuilder::default()
             .force()
@@ -1094,7 +1222,7 @@ fn merge_orphan_worker_into_main(repo_root: &Path, worker_branch: &str) -> Resul
     Ok(())
 }
 
-fn bump_version_json(repo_root: &Path) -> Result<()> {
+fn bump_version_json(repo_root: &Path, target_branch: &str) -> Result<()> {
     let p = repo_root.join("version.json");
     let raw = std::fs::read_to_string(&p).unwrap_or_else(|_| r#"{"version":"0.0.0"}"#.into());
     let mut vf: VersionFile = serde_json::from_str(&raw).unwrap_or(VersionFile {
@@ -1104,7 +1232,7 @@ fn bump_version_json(repo_root: &Path) -> Result<()> {
     std::fs::write(&p, serde_json::to_string_pretty(&vf)?)?;
 
     let repo = Repository::open(repo_root)?;
-    checkout_branch(&repo, "main")?;
+    checkout_branch(&repo, target_branch)?;
     let sig = hive_signature("The Queen", "queen@hive.local")?;
     let head = repo.head()?.peel_to_commit()?;
     let mut index = repo.index()?;
@@ -1162,6 +1290,8 @@ pub async fn run_worker_queue(
             profile: orchestrator.profile.clone(),
             max_mr_rejection_attempts: orchestrator.max_mr_rejection_attempts,
             run_tests_before_mr: orchestrator.run_tests_before_mr,
+            protect_main: orchestrator.protect_main,
+            integration_branch: orchestrator.integration_branch.clone(),
         };
         if let Err(e) = orch.incubate_worker_instance(t, state.clone()).await {
             warn!(
@@ -1226,7 +1356,8 @@ mod tests {
         colonize_and_analyze(tmp.path()).unwrap();
         ensure_mainline_seed(tmp.path()).unwrap();
         let id = Uuid::new_v4();
-        commit_hive_objective_milestone(tmp.path(), "0.1.0", "hive/worker/x", id, "rust").unwrap();
+        commit_hive_objective_milestone(tmp.path(), "0.1.0", "hive/worker/x", id, "rust", "main")
+            .unwrap();
         let body = fs::read_to_string(tmp.path().join("HIVE_OBJECTIVE.md")).unwrap();
         assert!(body.contains("Objetivo operativo"));
         assert!(body.contains("rust"));
@@ -1239,10 +1370,12 @@ mod tests {
         colonize_and_analyze(tmp.path()).unwrap();
         ensure_mainline_seed(tmp.path()).unwrap();
         let id = Uuid::new_v4();
-        commit_hive_objective_milestone(tmp.path(), "0.1.0", "hive/worker/x", id, "rust").unwrap();
+        commit_hive_objective_milestone(tmp.path(), "0.1.0", "hive/worker/x", id, "rust", "main")
+            .unwrap();
         let repo = Repository::open(tmp.path()).unwrap();
         let n1 = repo.revwalk().unwrap().count();
-        commit_hive_objective_milestone(tmp.path(), "0.1.0", "hive/worker/x", id, "rust").unwrap();
+        commit_hive_objective_milestone(tmp.path(), "0.1.0", "hive/worker/x", id, "rust", "main")
+            .unwrap();
         let n2 = repo.revwalk().unwrap().count();
         assert_eq!(n1, n2);
     }
@@ -1281,6 +1414,8 @@ mod tests {
             profile: empty_profile(),
             max_mr_rejection_attempts: 10,
             run_tests_before_mr: false,
+            protect_main: false,
+            integration_branch: "main".to_string(),
         };
         let st = std::sync::Arc::new(Mutex::new(HiveState::default()));
         run_worker_queue(orch, vec![], st).await.unwrap();
@@ -1297,6 +1432,8 @@ mod tests {
             profile: empty_profile(),
             max_mr_rejection_attempts: 10,
             run_tests_before_mr: false,
+            protect_main: false,
+            integration_branch: "main".to_string(),
         };
         let st = std::sync::Arc::new(Mutex::new(HiveState::default()));
         drain_task_queue(orch, vec![], st).await.unwrap();
@@ -1350,6 +1487,8 @@ mod tests {
             profile: empty_profile(),
             max_mr_rejection_attempts: 10,
             run_tests_before_mr: false,
+            protect_main: false,
+            integration_branch: "main".to_string(),
         };
         let st = std::sync::Arc::new(Mutex::new(HiveState::default()));
         run_worker_queue(orch, vec![task], st.clone())
@@ -1416,6 +1555,8 @@ mod tests {
             profile: empty_profile(),
             max_mr_rejection_attempts: 3,
             run_tests_before_mr: false,
+            protect_main: false,
+            integration_branch: "main".to_string(),
         };
         let st = std::sync::Arc::new(Mutex::new(HiveState::default()));
         run_worker_queue(orch, vec![task], st).await.unwrap();
@@ -1490,6 +1631,8 @@ mod tests {
             profile: empty_profile(),
             max_mr_rejection_attempts: 10,
             run_tests_before_mr: false,
+            protect_main: false,
+            integration_branch: "main".to_string(),
         };
         let st = std::sync::Arc::new(Mutex::new(HiveState::load_or_new(tmp.path()).unwrap()));
         run_worker_queue(orch, vec![task], st.clone())
@@ -1548,7 +1691,7 @@ mod tests {
         repo.commit(Some("HEAD"), &sig, &sig, "m", &tree3, &[&head_m])
             .unwrap();
 
-        let err = merge_derived_worker_into_main(tmp.path(), "worker").unwrap_err();
+        let err = merge_derived_worker_into_target(tmp.path(), "worker", "main").unwrap_err();
         assert!(err.to_string().contains("conflicto") || err.to_string().contains("conflict"));
     }
 
@@ -1570,9 +1713,11 @@ mod tests {
             Uuid::new_v4(),
             1,
             WorkerBranchMode::OrphanRoot,
+            false,
+            "main",
         )
         .unwrap();
-        merge_orphan_worker_into_main(tmp.path(), "hive/w1").unwrap();
+        merge_orphan_worker_into_target(tmp.path(), "hive/w1", "main").unwrap();
         assert!(tmp.path().join("version.json").exists());
     }
 
@@ -1611,10 +1756,74 @@ mod tests {
             wid,
             1,
             WorkerBranchMode::DerivedFromMain,
+            false,
+            "main",
         )
         .unwrap();
-        merge_branch_into_main(tmp.path(), "hive/w2", WorkerBranchMode::DerivedFromMain).unwrap();
-        bump_version_json(tmp.path()).unwrap();
+        merge_branch_into_target(
+            tmp.path(),
+            "hive/w2",
+            WorkerBranchMode::DerivedFromMain,
+            "main",
+        )
+        .unwrap();
+        bump_version_json(tmp.path(), "main").unwrap();
+    }
+
+    #[test]
+    fn merge_derived_to_integration_leaves_main_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        crate::discovery::colonize_and_analyze(tmp.path()).unwrap();
+        ensure_mainline_seed(tmp.path()).unwrap();
+        let repo = Repository::open(tmp.path()).unwrap();
+        let main_tip = repo.head().unwrap().peel_to_commit().unwrap().id();
+
+        ensure_integration_branch(tmp.path(), "hive/integration", true).unwrap();
+
+        let spec = crate::discovery::SpecialistProfile {
+            language_key: "rust".into(),
+            prompt_blueprint: "p".into(),
+            suggested_tools: vec![],
+            weight: 1.0,
+        };
+        let wid = Uuid::new_v4();
+        worker_commit_on_branch(
+            tmp.path(),
+            "hive/w_protect",
+            &spec,
+            "t",
+            wid,
+            1,
+            WorkerBranchMode::DerivedFromMain,
+            true,
+            "hive/integration",
+        )
+        .unwrap();
+        merge_branch_into_target(
+            tmp.path(),
+            "hive/w_protect",
+            WorkerBranchMode::DerivedFromMain,
+            "hive/integration",
+        )
+        .unwrap();
+
+        let repo = Repository::open(tmp.path()).unwrap();
+        let main_after = repo
+            .find_branch("main", BranchType::Local)
+            .unwrap()
+            .get()
+            .peel_to_commit()
+            .unwrap()
+            .id();
+        assert_eq!(main_after, main_tip);
+        let integ_tip = repo
+            .find_branch("hive/integration", BranchType::Local)
+            .unwrap()
+            .get()
+            .peel_to_commit()
+            .unwrap()
+            .id();
+        assert_ne!(integ_tip, main_tip);
     }
 
     #[test]
