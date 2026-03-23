@@ -1,0 +1,78 @@
+{
+  "name": "hive-vscode",
+  "displayName": "Hive — La Colmena",
+  "description": "Panel de chat y ejecución del ciclo La Reina (hive_core) sobre la carpeta del workspace.",
+  "version": "0.1.0",
+  "publisher": "hive",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "hive",
+    "git",
+    "automation",
+    "orchestration"
+  ],
+  "activationEvents": [
+    "onCommand:hive.openChat",
+    "onCommand:hive.runCycle"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "hive.openChat",
+        "title": "Hive: Abrir panel de misión",
+        "category": "Hive",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "hive.runCycle",
+        "title": "Hive: Ejecutar ciclo (hive.request.json actual)",
+        "category": "Hive"
+      }
+    ],
+    "configuration": {
+      "title": "Hive",
+      "properties": {
+        "hive.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Ruta absoluta al binario hive_core. Vacío = buscar \"hive_core\" en PATH."
+        },
+        "hive.showTerminalOnRun": {
+          "type": "boolean",
+          "default": false,
+          "description": "Si es true, también muestra la salida en la terminal integrada."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "hive.openChat",
+          "when": "workspaceFolderCount > 0"
+        },
+        {
+          "command": "hive.runCycle",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

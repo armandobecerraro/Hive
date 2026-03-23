@@ -12,3 +12,8 @@ hive_core/.env
 .DS_Store
 .idea/
 *.swp
+
+# Extensión VS Code (Hive)
+editors/vscode-hive/node_modules/
+editors/vscode-hive/out/
+editors/vscode-hive/*.vsix
