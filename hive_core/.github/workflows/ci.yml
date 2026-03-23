@@ -1,4 +1,4 @@
-# CI: fmt + clippy, tests en Ubuntu/macOS; cobertura de líneas ≥ 95 % (excluye binario y módulos git CLI).
+# CI: fmt + clippy, tests en Ubuntu/macOS; cobertura de líneas ≥ 95 % (excluye solo src/main.rs del cómputo).
 name: CI
 
 on:
@@ -63,12 +63,12 @@ jobs:
         working-directory: ${{ steps.crate.outputs.root }}
         run: cargo test --verbose
 
-      # Excluye: main (CLI), sequential_merger (merge git2 de bajo nivel), worktree_manager (git worktree vía subprocess).
+      # Solo excluye el binario (main.rs); el resto del crate debe cubrirse ≥ 95 % líneas.
       - name: Cobertura de líneas (≥ 95 %)
         working-directory: ${{ steps.crate.outputs.root }}
         run: |
           cargo llvm-cov test \
             --fail-under-lines 95 \
-            --ignore-filename-regex '^(.*/)?src/(main|sequential_merger|worktree_manager)\.rs$' \
+            --ignore-filename-regex '^(.*/)?src/main\.rs$' \
             --summary-only \
             --color always
