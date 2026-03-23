@@ -299,4 +299,11 @@ mod tests {
         assert!(g.contains("\n\n# The Hive"));
         assert!(g.contains(".hive_worker_*.md"));
     }
+
+    #[test]
+    fn test_purge_returns_zero_for_nonexistent_dir() {
+        let result =
+            crate::purge_dot_hive_worker_artifacts(std::path::Path::new("/nonexistent/path"));
+        assert_eq!(result, 0);
+    }
 }
