@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::process::Command;
 #[cfg(target_os = "macos")]
 use std::str;
+#[cfg(not(target_os = "macos"))]
+use sysinfo::System;
 
 /// Monitors system resources to determine if new agents can be spawned
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,12 +77,14 @@ impl ResourceMonitor {
 
         #[cfg(not(target_os = "macos"))]
         {
-            // Fallback for other systems
-            Ok(MemoryInfo {
-                total: 16 * 1024 * 1024 * 1024, // 16GB
-                used: 8 * 1024 * 1024 * 1024,   // 8GB
-                free: 8 * 1024 * 1024 * 1024,   // 8GB
-            })
+            let mut sys = System::new_all();
+            sys.refresh_memory();
+            let total = sys.total_memory();
+            let used = sys.used_memory();
+            let free = sys.available_memory();
+            // sysinfo returns bytes on most platforms, but on some Linux it's KiB.
+            // Normalize: sysinfo >= 0.32 uses bytes consistently.
+            Ok(MemoryInfo { total, used, free })
         }
     }
 
@@ -133,8 +137,11 @@ impl ResourceMonitor {
 
         #[cfg(not(target_os = "macos"))]
         {
-            // Fallback for other systems
-            Ok(50.0)
+            let mut sys = System::new_all();
+            sys.refresh_cpu_all();
+            // sysinfo global_cpu() returns 0-100 directly in 0.32+
+            let cpu_usage = sys.global_cpu_info().cpu_usage();
+            Ok(cpu_usage)
         }
     }
 

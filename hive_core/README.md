@@ -20,7 +20,17 @@ The Hive is an autonomous development orchestration system written in Rust. At i
 
 6. **`state.rs`** — Persistencia `hive.json` y decisiones.
 
-*(Hay archivos sueltos en `src/` que no forman parte del árbol de módulos publicado; el comportamiento documentado arriba corresponde a lo que exporta `lib.rs`.)*
+7. **`sequential_merger.rs`** — Merge secuencial de ramas con detección de conflictos.
+
+8. **`agent.rs`** — WorkerAgent: ejecución de tareas por especialista.
+
+9. **`request.rs`** — Resolución de `hive.request.json`, bootstrap y scaffolding.
+
+10. **`resource_monitor.rs`** — Monitoreo de CPU/RAM con `sysinfo` (cross-platform).
+
+11. **`git_manager.rs`** — Utilidades Git sobre `libgit2`.
+
+*(Módulos multi-agente opcionales bajo `--features multiagent`: `blackboard`, `brain`, `worker`.)*
 
 ## Key Features
 

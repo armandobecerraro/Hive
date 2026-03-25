@@ -272,6 +272,21 @@ impl Brain {
                 current_file = line.replace("FILE:", "").trim().to_string();
             } else if line.starts_to_uppercase("TASK:") {
                 current_task = line.replace("TASK:", "").trim().to_string();
+                // Solo crear tarea cuando tenemos FILE y TASK completos
+                if !current_file.is_empty() && !current_task.is_empty() {
+                    tasks.push(Task {
+                        id: Uuid::new_v4(),
+                        description: current_task.clone(),
+                        target_file: PathBuf::from(&current_file),
+                        specialist_type: current_specialist,
+                        priority: 1,
+                        dependencies: vec![],
+                        created_by: Uuid::nil(),
+                        status: TaskStatus::Pending,
+                    });
+                    current_file.clear();
+                    current_task.clear();
+                }
             } else if line.starts_to_uppercase("SPECIALIST:") {
                 let spec_str = line.replace("SPECIALIST:", "").trim().to_lowercase();
                 current_specialist = match spec_str.as_str() {
@@ -281,22 +296,6 @@ impl Brain {
                     "docs" => Specialist::Docs,
                     _ => self.specialist_type,
                 };
-            }
-
-            // If we have enough info, create a task
-            if !current_file.is_empty() && !current_task.is_empty() {
-                tasks.push(Task {
-                    id: Uuid::new_v4(),
-                    description: current_task.clone(),
-                    target_file: PathBuf::from(&current_file),
-                    specialist_type: current_specialist,
-                    priority: 1,
-                    dependencies: vec![],
-                    created_by: Uuid::nil(), // Brain created this
-                    status: TaskStatus::Pending,
-                });
-                current_file.clear();
-                current_task.clear();
             }
         }
 

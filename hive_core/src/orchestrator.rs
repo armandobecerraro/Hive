@@ -23,6 +23,22 @@ use crate::brain::{Brain, MockLLMClient};
 
 pub use crate::work::{TaskStatus, WorkerBranchMode, WorkerTask};
 
+/// Política Git agrupada para evitar demasiados parámetros en funciones.
+#[derive(Debug, Clone)]
+pub struct GitPolicy {
+    pub protect_main: bool,
+    pub integration_branch: String,
+}
+
+impl GitPolicy {
+    pub fn new(protect_main: bool, integration_branch: String) -> Self {
+        Self {
+            protect_main,
+            integration_branch,
+        }
+    }
+}
+
 /// Main orchestrator for The Hive
 pub struct HiveOrchestrator {
     target: std::path::PathBuf,
@@ -241,19 +257,10 @@ impl Orchestrator {
         let profile = self.profile.clone();
         let max_mr = self.max_mr_rejection_attempts;
         let run_tests = self.run_tests_before_mr;
-        let protect_main = self.protect_main;
-        let integration_branch = self.integration_branch.clone();
+        let git_policy = GitPolicy::new(self.protect_main, self.integration_branch.clone());
         let handle = tokio::spawn(async move {
             run_worker_lifecycle(
-                repo_root,
-                council_tx,
-                task,
-                state,
-                profile,
-                max_mr,
-                run_tests,
-                protect_main,
-                integration_branch,
+                repo_root, council_tx, task, state, profile, max_mr, run_tests, git_policy,
             )
             .await
         });
@@ -274,7 +281,7 @@ fn hive_signature(name: &'static str, email: &'static str) -> Result<Signature<'
 }
 
 /// Ciclo tipo GitLab/GitHub: rama por obrera → commits en esa rama → MR (revisión Consejo) → merge a la línea de integración → borrar rama local.
-#[allow(clippy::too_many_arguments)] // parámetros de política Git + ciclo MR explícitos
+#[allow(clippy::too_many_arguments)]
 async fn run_worker_lifecycle(
     repo_root: PathBuf,
     council_tx: CouncilSender,
@@ -283,8 +290,7 @@ async fn run_worker_lifecycle(
     profile: RepositoryProfile,
     max_mr_rejection_attempts: u32,
     run_tests_before_mr: bool,
-    protect_main: bool,
-    integration_branch: String,
+    git_policy: GitPolicy,
 ) -> Result<()> {
     let branch = format!("hive/worker/{}", task.id);
     let mut attempt: u32 = 1;
@@ -321,11 +327,10 @@ async fn run_worker_lifecycle(
             let title = task.title.clone();
             let tid = task.id;
             let mode = task.branch_mode;
-            let pm = protect_main;
-            let ib = integration_branch.clone();
+            let gp = git_policy.clone();
             info!(attempt, "commit artefacto obrero (rama huérfana inicial)");
             tokio::task::spawn_blocking(move || {
-                worker_commit_on_branch(&rr, &b, &spec, &title, tid, attempt, mode, pm, &ib)
+                worker_commit_on_branch(&rr, &b, &spec, &title, tid, attempt, mode, &gp)
             })
             .await
             .context("join worker_commit")??;
@@ -334,13 +339,10 @@ async fn run_worker_lifecycle(
             let b = branch.clone();
             let mode = task.branch_mode;
             let att = attempt;
-            let pm = protect_main;
-            let ib = integration_branch.clone();
-            tokio::task::spawn_blocking(move || {
-                ensure_on_worker_branch(&rr, &b, mode, att, pm, &ib)
-            })
-            .await
-            .context("join ensure branch")??;
+            let gp = git_policy.clone();
+            tokio::task::spawn_blocking(move || ensure_on_worker_branch(&rr, &b, mode, att, &gp))
+                .await
+                .context("join ensure branch")??;
 
             let mut agent = WorkerAgent::with_evolution(
                 task.clone(),
@@ -464,7 +466,7 @@ async fn run_worker_lifecycle(
                 let merge_mode = task.branch_mode;
                 let mr_id = mr.id;
                 let specialist_key = task.specialist.language_key.clone();
-                let target = integration_branch.clone();
+                let target = git_policy.integration_branch.clone();
                 tokio::task::spawn_blocking(move || {
                     merge_branch_into_target(&repo_root2, &branch2, merge_mode, &target)?;
                     bump_version_json(&repo_root2, &target)?;
@@ -509,7 +511,7 @@ async fn run_worker_lifecycle(
                     let br_obs = branch.clone();
                     let wid_obs = task.id;
                     let sk_obs = task.specialist.language_key.clone();
-                    let line_obs = integration_branch.clone();
+                    let line_obs = git_policy.integration_branch.clone();
                     tokio::task::spawn_blocking(move || {
                         append_feedback_note(&repo_obs, &fb_obs, att)?;
                         abandon_worker_mr(
@@ -568,7 +570,7 @@ async fn run_worker_lifecycle(
                     let br = branch.clone();
                     let wid = task.id;
                     let sk = task.specialist.language_key.clone();
-                    let line_ab = integration_branch.clone();
+                    let line_ab = git_policy.integration_branch.clone();
                     tokio::task::spawn_blocking(move || {
                         abandon_worker_mr(
                             &rr,
@@ -736,11 +738,14 @@ fn ensure_on_worker_branch(
     branch: &str,
     branch_mode: WorkerBranchMode,
     attempt: u32,
-    protect_main: bool,
-    integration_branch: &str,
+    git_policy: &GitPolicy,
 ) -> Result<()> {
     ensure_mainline_seed(repo_root)?;
-    ensure_integration_branch(repo_root, integration_branch, protect_main)?;
+    ensure_integration_branch(
+        repo_root,
+        &git_policy.integration_branch,
+        git_policy.protect_main,
+    )?;
     let repo = Repository::open(repo_root)?;
     if branch_mode == WorkerBranchMode::OrphanRoot && attempt == 1 && !branch_exists(&repo, branch)?
     {
@@ -748,8 +753,8 @@ fn ensure_on_worker_branch(
             "ensure_on_worker_branch: huérfano inicial debe usar worker_commit_on_branch"
         ));
     }
-    if protect_main {
-        checkout_branch(&repo, integration_branch)?;
+    if git_policy.protect_main {
+        checkout_branch(&repo, &git_policy.integration_branch)?;
     }
     let head = repo.head()?.peel_to_commit()?;
     if branch_exists(&repo, branch)? {
@@ -815,11 +820,14 @@ fn worker_commit_on_branch(
     worker_id: Uuid,
     attempt: u32,
     branch_mode: WorkerBranchMode,
-    protect_main: bool,
-    integration_branch: &str,
+    git_policy: &GitPolicy,
 ) -> Result<()> {
     ensure_mainline_seed(repo_root)?;
-    ensure_integration_branch(repo_root, integration_branch, protect_main)?;
+    ensure_integration_branch(
+        repo_root,
+        &git_policy.integration_branch,
+        git_policy.protect_main,
+    )?;
     let repo = Repository::open(repo_root)?;
 
     let n = crate::purge_dot_hive_worker_artifacts(repo_root);
@@ -837,7 +845,11 @@ fn worker_commit_on_branch(
 
     if branch_mode == WorkerBranchMode::OrphanRoot && attempt == 1 && !branch_exists(&repo, branch)?
     {
-        let base = orphan_initial_base_branch(&repo, protect_main, integration_branch)?;
+        let base = orphan_initial_base_branch(
+            &repo,
+            git_policy.protect_main,
+            &git_policy.integration_branch,
+        )?;
         checkout_branch(&repo, &base)?;
         let mut index = repo.index()?;
         index.clear()?;
@@ -862,8 +874,8 @@ fn worker_commit_on_branch(
         return Ok(());
     }
 
-    if protect_main {
-        checkout_branch(&repo, integration_branch)?;
+    if git_policy.protect_main {
+        checkout_branch(&repo, &git_policy.integration_branch)?;
     }
 
     let head = repo.head()?.peel_to_commit()?;
@@ -1440,6 +1452,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn incubacion_end_to_end_derived() {
         let tmp = tempfile::tempdir().unwrap();
         std::env::remove_var("HIVE_BRANCH_MODE");
@@ -1705,6 +1718,7 @@ mod tests {
             suggested_tools: vec![],
             weight: 1.0,
         };
+        let gp = GitPolicy::new(false, "main".to_string());
         worker_commit_on_branch(
             tmp.path(),
             "hive/w1",
@@ -1713,8 +1727,7 @@ mod tests {
             Uuid::new_v4(),
             1,
             WorkerBranchMode::OrphanRoot,
-            false,
-            "main",
+            &gp,
         )
         .unwrap();
         merge_orphan_worker_into_target(tmp.path(), "hive/w1", "main").unwrap();
@@ -1748,6 +1761,7 @@ mod tests {
             weight: 1.0,
         };
         let wid = Uuid::new_v4();
+        let gp = GitPolicy::new(false, "main".to_string());
         worker_commit_on_branch(
             tmp.path(),
             "hive/w2",
@@ -1756,8 +1770,7 @@ mod tests {
             wid,
             1,
             WorkerBranchMode::DerivedFromMain,
-            false,
-            "main",
+            &gp,
         )
         .unwrap();
         merge_branch_into_target(
@@ -1787,6 +1800,7 @@ mod tests {
             weight: 1.0,
         };
         let wid = Uuid::new_v4();
+        let gp = GitPolicy::new(true, "hive/integration".to_string());
         worker_commit_on_branch(
             tmp.path(),
             "hive/w_protect",
@@ -1795,8 +1809,7 @@ mod tests {
             wid,
             1,
             WorkerBranchMode::DerivedFromMain,
-            true,
-            "hive/integration",
+            &gp,
         )
         .unwrap();
         merge_branch_into_target(

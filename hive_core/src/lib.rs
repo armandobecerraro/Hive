@@ -13,18 +13,7 @@ pub mod state;
 pub mod work;
 
 // Módulos de mejora del enjambre
-pub mod checkpoint;
-pub mod dashboard;
-pub mod file_lock;
-pub mod human_in_loop;
-pub mod living_specs;
-pub mod model_router;
-pub mod prioritizer;
-pub mod roles;
 pub mod sequential_merger;
-pub mod supervisor;
-pub mod tracing_system;
-pub mod worktree_manager;
 
 // Módulos multi-agente (opcionales, requieren feature "multiagent")
 #[cfg(feature = "multiagent")]
@@ -236,6 +225,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn run_queen_cycle_runs_bootstrap_from_request() {
         let t = tempfile::tempdir().unwrap();
         std::env::remove_var("HIVE_BRANCH_MODE");

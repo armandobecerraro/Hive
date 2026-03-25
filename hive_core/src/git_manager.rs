@@ -238,14 +238,6 @@ pub fn delete_local_feature_branch_after_integrated_merge(
     Ok(deleted)
 }
 
-impl Clone for GitManager {
-    fn clone(&self) -> Self {
-        // Note: Repository doesn't implement Clone, so we create a new one
-        // In a real implementation, you'd want to handle this differently
-        Self { repo: None }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,13 +272,6 @@ mod tests {
         let gm = GitManager::new();
         gm.create_pull_request("feature/x", "título", "cuerpo")
             .unwrap();
-    }
-
-    #[test]
-    fn clone_clears_repo_handle() {
-        let a = GitManager::new();
-        let b = a.clone();
-        assert!(b.repo.is_none());
     }
 
     #[test]

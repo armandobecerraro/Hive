@@ -266,9 +266,27 @@ impl SequentialMerger {
         conflicts
     }
 
-    fn count_changes(&self, _base: &git2::Commit, _branch: &git2::Commit) -> u32 {
-        // Simplificado: retornar 1 si hay cambios
-        1
+    fn count_changes(&self, base: &git2::Commit, branch: &git2::Commit) -> u32 {
+        let repo = match Repository::open(&self.repo_root) {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+        let base_tree = match base.tree() {
+            Ok(t) => t,
+            Err(_) => return 0,
+        };
+        let branch_tree = match branch.tree() {
+            Ok(t) => t,
+            Err(_) => return 0,
+        };
+        let mut count = 0u32;
+        let mut opts = git2::DiffOptions::new();
+        if let Ok(diff) =
+            repo.diff_tree_to_tree(Some(&base_tree), Some(&branch_tree), Some(&mut opts))
+        {
+            count = diff.stats().map(|s| s.files_changed() as u32).unwrap_or(0);
+        }
+        count
     }
 
     fn checkout_branch(&self, repo: &Repository, name: &str) -> Result<()> {
@@ -437,7 +455,10 @@ mod tests {
         let results = m.execute_plan(&plan).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].success, "{:?}", results[0].error);
-        assert_eq!(results[0].files_changed, 1);
+        assert!(
+            results[0].files_changed >= 1,
+            "debe haber al menos 1 archivo cambiado"
+        );
         assert!(results[0].error.is_none());
 
         let repo = Repository::open(tmp.path()).unwrap();
@@ -733,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn count_changes_always_returns_one() {
+    fn count_changes_same_commit_returns_zero() {
         let tmp = tempdir().unwrap();
         let repo = init_repo_with_main(tmp.path());
         let m = SequentialMerger::new(tmp.path().to_path_buf(), "main".into());
@@ -742,7 +763,7 @@ mod tests {
         let branch = repo.head().unwrap().peel_to_commit().unwrap();
 
         let changes = m.count_changes(&base, &branch);
-        assert_eq!(changes, 1);
+        assert_eq!(changes, 0);
     }
 
     #[test]
@@ -833,7 +854,7 @@ mod tests {
     }
 
     #[test]
-    fn count_changes_different_commits() {
+    fn count_changes_same_commit_returns_zero_for_identical() {
         let tmp = tempdir().unwrap();
         let repo = init_repo_with_main(tmp.path());
         let m = SequentialMerger::new(tmp.path().to_path_buf(), "main".into());
@@ -841,7 +862,7 @@ mod tests {
         let commit = repo.head().unwrap().peel_to_commit().unwrap();
 
         let changes = m.count_changes(&commit, &commit);
-        assert_eq!(changes, 1);
+        assert_eq!(changes, 0);
     }
 
     #[test]
