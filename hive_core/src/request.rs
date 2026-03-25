@@ -454,7 +454,8 @@ fn scaffold_node(repo: &Path, req: &HiveRequest) -> Result<()> {
         });
         fs::write(
             repo.join("package.json"),
-            serde_json::to_string_pretty(&j).unwrap(),
+            serde_json::to_string_pretty(&j)
+                .map_err(|e| anyhow::anyhow!("serializar package.json: {e}"))?,
         )?;
     }
     if !repo.join("index.js").exists() {

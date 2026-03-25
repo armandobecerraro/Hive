@@ -16,9 +16,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: cargo test (macOS)
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            hive_core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('hive_core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: cargo fmt (--check)
+        working-directory: hive_core
+        run: cargo fmt --all -- --check
+      - name: cargo clippy (-D warnings)
+        working-directory: hive_core
+        run: cargo clippy --all-targets -- -D warnings
+      - name: cargo test
         working-directory: hive_core
         run: cargo test --verbose
+      - name: cargo test --features multiagent
+        working-directory: hive_core
+        run: cargo test --verbose --features multiagent
 
   hive-core-ubuntu:
     runs-on: ubuntu-latest
@@ -30,6 +48,16 @@ jobs:
           components: llvm-tools-preview
 
       - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            hive_core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('hive_core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Dependencias del sistema (libgit2, SSL, LLVM)
         run: |
@@ -48,6 +76,10 @@ jobs:
         working-directory: hive_core
         run: cargo test --verbose
 
+      - name: cargo test --features multiagent
+        working-directory: hive_core
+        run: cargo test --verbose --features multiagent
+
       - name: Cobertura de líneas (≥ 95 %)
         working-directory: hive_core
         run: |
@@ -56,6 +88,14 @@ jobs:
             --ignore-filename-regex '^(.*/)?src/main\.rs$' \
             --summary-only \
             --color always
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   vscode-extension:
     runs-on: ubuntu-latest
@@ -74,3 +114,7 @@ jobs:
           npm ci
           npm run compile
           npm test
+
+      - name: npm audit
+        working-directory: editors/vscode-hive
+        run: npm audit --production

@@ -342,7 +342,7 @@ impl Brain {
     }
 }
 
-/// Rutas que el LLM no debe poder escribir (placeholders, traversal, `.git`, absolutas).
+/// Rutas que el LLM no debe poder escribir (placeholders, traversal, `.git`, absolutas, symlinks).
 fn is_safe_llm_repo_path(rel: &str) -> bool {
     let rel = rel.trim();
     if rel.is_empty()
@@ -358,6 +358,7 @@ fn is_safe_llm_repo_path(rel: &str) -> bool {
     if p.is_absolute() {
         return false;
     }
+    // Rechazar componente a componente para detectar traversal y .git
     for c in p.components() {
         use std::path::Component;
         match c {
@@ -368,6 +369,21 @@ fn is_safe_llm_repo_path(rel: &str) -> bool {
                 }
             }
             _ => {}
+        }
+    }
+    // Verificar componentes por symlinks: si alguno es symlink, rechazar
+    let mut cur = std::path::PathBuf::new();
+    for component in p.components() {
+        use std::path::Component;
+        if let Component::Normal(_) = component {
+            cur.push(component.as_os_str());
+            if cur
+                .symlink_metadata()
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                return false;
+            }
         }
     }
     true

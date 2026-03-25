@@ -315,3 +315,117 @@ pub async fn spawn_workers(
 
     handles
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blackboard::{Blackboard, FileAction, FileChange, Specialist, Task};
+    use crate::brain::{Brain, MockLLMClient};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+    use uuid::Uuid;
+
+    fn test_worker(tmp: &TempDir) -> Worker {
+        let bb = Arc::new(Blackboard::new());
+        let mock = MockLLMClient::new(String::new());
+        let brain = Arc::new(Brain::new(Box::new(mock), bb.clone(), Specialist::Generic));
+        Worker::new(Specialist::Rust, bb, brain, tmp.path().to_path_buf())
+    }
+
+    fn sample_change(path: &str, content: &str, action: FileAction) -> FileChange {
+        FileChange {
+            path: std::path::PathBuf::from(path),
+            content: content.into(),
+            action,
+            diff: None,
+        }
+    }
+
+    fn sample_task() -> Task {
+        Task {
+            id: Uuid::new_v4(),
+            description: "test task".into(),
+            target_file: std::path::PathBuf::from("src/lib.rs"),
+            specialist_type: Specialist::Rust,
+            priority: 1,
+            dependencies: vec![],
+            created_by: Uuid::nil(),
+            status: crate::blackboard::TaskStatus::Pending,
+        }
+    }
+
+    #[test]
+    fn worker_has_unique_id() {
+        let tmp = TempDir::new().unwrap();
+        let w1 = test_worker(&tmp);
+        let w2 = test_worker(&tmp);
+        assert_ne!(w1.id(), w2.id());
+    }
+
+    #[test]
+    fn parse_code_response_no_panic() {
+        let tmp = TempDir::new().unwrap();
+        let w = test_worker(&tmp);
+        let task = sample_task();
+        let result = w.parse_code_response("no code blocks here", &task).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn apply_file_change_creates_file() {
+        let tmp = TempDir::new().unwrap();
+        let w = test_worker(&tmp);
+        let change = sample_change("test_output.txt", "hello", FileAction::Create);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(w.apply_file_change(&change)).unwrap();
+        assert!(tmp.path().join("test_output.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("test_output.txt")).unwrap(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn apply_file_change_modifies_file() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("existing.txt"), "old").unwrap();
+        let w = test_worker(&tmp);
+        let change = sample_change("existing.txt", "new content", FileAction::Modify);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(w.apply_file_change(&change)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("existing.txt")).unwrap(),
+            "new content"
+        );
+    }
+
+    #[test]
+    fn apply_file_change_deletes_file() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("to_delete.txt"), "bye").unwrap();
+        let w = test_worker(&tmp);
+        let change = sample_change("to_delete.txt", "", FileAction::Delete);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(w.apply_file_change(&change)).unwrap();
+        assert!(!tmp.path().join("to_delete.txt").exists());
+    }
+
+    #[test]
+    fn apply_file_change_delete_nonexistent_is_ok() {
+        let tmp = TempDir::new().unwrap();
+        let w = test_worker(&tmp);
+        let change = sample_change("nonexistent.txt", "", FileAction::Delete);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        assert!(rt.block_on(w.apply_file_change(&change)).is_ok());
+    }
+
+    #[test]
+    fn apply_file_change_creates_nested_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let w = test_worker(&tmp);
+        let change = sample_change("a/b/c/file.txt", "nested", FileAction::Create);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(w.apply_file_change(&change)).unwrap();
+        assert!(tmp.path().join("a/b/c/file.txt").exists());
+    }
+}

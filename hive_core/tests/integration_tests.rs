@@ -1,108 +1,84 @@
 //! Pruebas de integración contra la API pública del crate `hive_core`.
 
-use hive_core::council::{CouncilVerdict, Maintainer, MergeRequest};
-use hive_core::discovery::colonize_and_analyze;
-use hive_core::orchestrator::{
-    system_allows_new_instance, ResourcePolicy, WorkerBranchMode, WorkerTask,
+use hive_core::council::{
+    calculate_quality_score, rejection_indicates_work_obsolete, CouncilVerdict, Maintainer,
+    MergeRequest,
 };
-use serde_json::Value;
+use hive_core::discovery::colonize_and_analyze;
+use hive_core::orchestrator::{system_allows_new_instance, ResourcePolicy};
 use std::fs;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-#[test]
-fn test_empty_directory_initialization() {
-    let temp_dir = TempDir::new().unwrap();
-    let target_path = temp_dir.path();
-    assert!(target_path.exists());
-}
+// ── Tests reales del crate ──────────────────────────────────────────────
 
 #[test]
-fn test_rust_file_detection() {
+fn test_colonize_and_analyze_creates_report() {
     let temp_dir = TempDir::new().unwrap();
-    let rust_file = temp_dir.path().join("main.rs");
-    fs::write(&rust_file, "fn main() {}").unwrap();
-    let cargo_file = temp_dir.path().join("Cargo.toml");
+    fs::write(temp_dir.path().join("main.rs"), "fn main() {}").unwrap();
     fs::write(
-        &cargo_file,
-        "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
     .unwrap();
-    assert!(rust_file.exists());
-    assert!(cargo_file.exists());
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize");
+    assert!(!report.specialists.is_empty());
+    assert!(!report.dna.extension_histogram.is_empty());
 }
 
 #[test]
-fn test_python_file_detection() {
+fn test_colonize_and_analyze_python_repo() {
     let temp_dir = TempDir::new().unwrap();
-    let py_file = temp_dir.path().join("main.py");
-    fs::write(&py_file, "print('hello')").unwrap();
-    let requirements = temp_dir.path().join("requirements.txt");
-    fs::write(&requirements, "requests==2.31.0").unwrap();
-    assert!(py_file.exists());
-    assert!(requirements.exists());
+    fs::write(temp_dir.path().join("main.py"), "print('hello')").unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize python");
+    assert!(!report.specialists.is_empty());
+    assert!(report.dna.extension_histogram.contains_key("py"));
 }
 
 #[test]
-fn test_javascript_file_detection() {
+fn test_colonize_and_analyze_javascript_repo() {
     let temp_dir = TempDir::new().unwrap();
-    let js_file = temp_dir.path().join("index.js");
-    fs::write(&js_file, "console.log('test')").unwrap();
-    let ts_file = temp_dir.path().join("app.ts");
-    fs::write(&ts_file, "const x: number = 5;").unwrap();
-    let package_json = temp_dir.path().join("package.json");
-    fs::write(&package_json, "{\"name\": \"test\"}").unwrap();
-    assert!(js_file.exists());
-    assert!(ts_file.exists());
-    assert!(package_json.exists());
+    fs::write(temp_dir.path().join("index.js"), "console.log('hi')").unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize js");
+    assert!(!report.specialists.is_empty());
+    assert!(report.dna.extension_histogram.contains_key("js"));
 }
 
 #[test]
-fn test_technical_debt_detection() {
+fn test_colonize_and_analyze_detects_todo_markers() {
     let temp_dir = TempDir::new().unwrap();
-    let todo_file = temp_dir.path().join("TODO");
-    fs::write(&todo_file, "Fix this later").unwrap();
-    let fixme_file = temp_dir.path().join("FIXME.md");
-    fs::write(&fixme_file, "Needs fixing").unwrap();
-    assert!(todo_file.exists());
-    assert!(fixme_file.exists());
+    fs::write(
+        temp_dir.path().join("main.rs"),
+        "// TODO: fix this\nfn main() {}",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize debt");
+    assert!(report.dna.debt.todo_markers > 0);
 }
 
 #[test]
-fn test_ci_cd_detection() {
+fn test_colonize_and_analyze_empty_dir() {
     let temp_dir = TempDir::new().unwrap();
-    let workflows_dir = temp_dir.path().join(".github").join("workflows");
-    fs::create_dir_all(&workflows_dir).unwrap();
-    let ci_file = workflows_dir.join("ci.yml");
-    fs::write(&ci_file, "name: CI").unwrap();
-    let dockerfile = temp_dir.path().join("Dockerfile");
-    fs::write(&dockerfile, "FROM alpine").unwrap();
-    assert!(ci_file.exists());
-    assert!(dockerfile.exists());
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize empty");
+    assert!(report.was_empty_before_init);
 }
 
 #[test]
-fn test_worker_task_fields() {
-    let specialist = hive_core::discovery::SpecialistProfile {
-        language_key: "rust".into(),
-        prompt_blueprint: "p".into(),
-        suggested_tools: vec![],
-        weight: 1.0,
-    };
-    let task = WorkerTask {
-        id: Uuid::new_v4(),
-        title: "Tarea de prueba".into(),
-        specialist,
-        branch_mode: WorkerBranchMode::DerivedFromMain,
-        mission_one_liner: String::new(),
-        mission_brief: "brief".into(),
-        work_mode: hive_core::request::HiveWorkMode::Build,
-    };
-    assert_eq!(task.title, "Tarea de prueba");
-    assert!(matches!(
-        task.branch_mode,
-        WorkerBranchMode::DerivedFromMain
-    ));
+fn test_colonize_and_analyze_sets_repo_root() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("main.rs"), "fn main() {}").unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize");
+    assert_eq!(report.repo_root, temp_dir.path());
 }
 
 #[test]
@@ -124,94 +100,131 @@ fn test_maintainer_review_cycle() {
 }
 
 #[test]
-fn test_resource_gate_uses_policy() {
-    let policy = ResourcePolicy::default();
-    let _allowed = system_allows_new_instance(&policy);
+fn test_maintainer_rejects_when_tests_fail() {
+    let m = Maintainer {
+        reject_before_approve: 0,
+    };
+    let mr = MergeRequest {
+        id: Uuid::new_v4(),
+        branch: "hive/worker/1".into(),
+        title: "Test".into(),
+        description: "desc".into(),
+        worker_id: Uuid::new_v4(),
+        specialist_key: "rust".into(),
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("Cargo.toml"), "[invalid").unwrap();
+    let r = m.review(1, &mr, tmp.path());
+    assert!(matches!(r.verdict, CouncilVerdict::Rejected { .. }));
 }
 
 #[test]
-fn test_colonize_and_analyze_minimal_rust() {
-    let temp_dir = TempDir::new().unwrap();
-    fs::write(temp_dir.path().join("main.rs"), "fn main() {}").unwrap();
-    fs::write(
-        temp_dir.path().join("Cargo.toml"),
-        "[package]\nname = \"t\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
-    )
-    .unwrap();
-    let report = colonize_and_analyze(temp_dir.path()).expect("colonize");
-    assert!(!report.specialists.is_empty());
+fn test_resource_gate_permisive() {
+    let policy = ResourcePolicy {
+        max_cpu_percent: 100.0,
+        min_available_ram_bytes: 0,
+    };
+    assert!(system_allows_new_instance(&policy));
 }
 
 #[test]
-fn test_hive_json_schema_parse() {
-    let example_json = r#"{
-        "version": "1.0.0",
-        "created_at": "2026-03-21T15:21:26.310Z",
-        "repository_profile": {
-            "languages": ["Rust", "Python", "JavaScript"],
-            "frameworks": ["React", "Express"],
-            "technical_debt": ["TODO files", "Deprecated code"],
-            "build_tools": ["Cargo", "npm"],
-            "test_frameworks": ["cargo test", "Jest"],
-            "ci_cd": ["GitHub Actions", "Docker"]
-        }
-    }"#;
-    let parsed: Value = serde_json::from_str(example_json).unwrap();
-    assert_eq!(parsed["version"], "1.0.0");
-    let languages = &parsed["repository_profile"]["languages"];
-    assert!(languages.is_array());
-    assert_eq!(languages[0], "Rust");
+fn test_resource_gate_blocks_on_impossible_ram() {
+    let policy = ResourcePolicy {
+        max_cpu_percent: 100.0,
+        min_available_ram_bytes: u64::MAX,
+    };
+    assert!(!system_allows_new_instance(&policy));
 }
 
 #[test]
-fn test_strategy_pattern_labels() {
-    let rust_agent_type = "rust_analyzer";
-    let python_agent_type = "python_analyzer";
-    let js_agent_type = "js_analyzer";
-    assert_ne!(rust_agent_type, python_agent_type);
-    assert_ne!(rust_agent_type, js_agent_type);
-    assert_ne!(python_agent_type, js_agent_type);
-    let agent_types = [rust_agent_type, python_agent_type, js_agent_type];
-    assert_eq!(agent_types.len(), 3);
+fn test_quality_score_passing_tests() {
+    assert!(calculate_quality_score(true, 0, 5) > 90);
 }
 
 #[test]
-fn test_message_channels_simulation() {
-    use std::sync::mpsc;
-    let (tx, rx) = mpsc::channel();
-    let feedback = vec![
-        "Needs more error handling".to_string(),
-        "Add unit tests".to_string(),
-    ];
-    tx.send(feedback.clone()).unwrap();
-    let received = rx.recv().unwrap();
-    assert_eq!(received.len(), 2);
-    assert_eq!(received[0], "Needs more error handling");
-    assert_eq!(received[1], "Add unit tests");
+fn test_quality_score_failing_tests() {
+    assert!(calculate_quality_score(false, 0, 5) < 60);
 }
 
 #[test]
-fn test_version_json_parse() {
-    let version_data = r#"{
-        "version": "0.1.0",
-        "timestamp": "2026-03-21T15:00:00.000Z",
-        "changes": ["Initial version"],
-        "agent_id": "queen-initializer"
-    }"#;
-    let parsed: Value = serde_json::from_str(version_data).unwrap();
-    assert_eq!(parsed["version"], "0.1.0");
-    assert_eq!(parsed["agent_id"], "queen-initializer");
+fn test_quality_score_many_warnings() {
+    assert!(calculate_quality_score(true, 50, 5) < 60);
 }
 
 #[test]
-fn test_orphan_branch_naming_convention() {
-    let branch_names = vec![
-        "task/rust_analyzer-agent-123",
-        "task/python_analyzer-agent-456",
-        "task/js_analyzer-agent-789",
-    ];
-    for branch_name in branch_names {
-        assert!(branch_name.starts_with("task/"));
-        assert!(!branch_name.contains("main"));
+fn test_rejection_obsolete_detection() {
+    assert!(rejection_indicates_work_obsolete(
+        "Ya no se requiere este cambio"
+    ));
+    assert!(rejection_indicates_work_obsolete("NOT NEEDED anymore"));
+    assert!(rejection_indicates_work_obsolete("Ya está hecho en main"));
+    assert!(rejection_indicates_work_obsolete("duplicate work"));
+    assert!(!rejection_indicates_work_obsolete(
+        "Rechazo técnico: endurecer mensaje de commit"
+    ));
+}
+
+#[test]
+fn test_worker_task_construction() {
+    let specialist = hive_core::discovery::SpecialistProfile {
+        language_key: "rust".into(),
+        prompt_blueprint: "p".into(),
+        suggested_tools: vec![],
+        weight: 1.0,
+    };
+    let task = hive_core::orchestrator::WorkerTask {
+        id: Uuid::new_v4(),
+        title: "Tarea de prueba".into(),
+        specialist,
+        branch_mode: hive_core::orchestrator::WorkerBranchMode::DerivedFromMain,
+        mission_one_liner: String::new(),
+        mission_brief: "brief".into(),
+        work_mode: hive_core::request::HiveWorkMode::Build,
+    };
+    assert_eq!(task.title, "Tarea de prueba");
+    assert!(matches!(
+        task.branch_mode,
+        hive_core::orchestrator::WorkerBranchMode::DerivedFromMain
+    ));
+}
+
+#[test]
+fn test_hive_state_load_or_new() {
+    let tmp = TempDir::new().unwrap();
+    let state1 = hive_core::state::HiveState::load_or_new(tmp.path()).unwrap();
+    assert_eq!(state1.schema_version, 1);
+    state1.save(tmp.path()).unwrap();
+    let state2 = hive_core::state::HiveState::load_or_new(tmp.path()).unwrap();
+    assert_eq!(state2.schema_version, 1);
+}
+
+#[test]
+fn test_hive_state_decision_log() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = hive_core::state::HiveState::load_or_new(tmp.path()).unwrap();
+    state.log_decision("test_decision", String::from("detalles de prueba"));
+    assert!(!state.decision_tree.is_empty());
+    assert!(state
+        .decision_tree
+        .iter()
+        .any(|d| d.decision.contains("test_decision")));
+}
+
+#[test]
+fn test_hive_state_trim_retention() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = hive_core::state::HiveState::load_or_new(tmp.path()).unwrap();
+    for i in 0..50 {
+        state.log_decision(format!("decision_{i}"), format!("detail {i}"));
     }
+    assert_eq!(state.decision_tree.len(), 50);
+    state.trim_retention(10, 10);
+    assert_eq!(state.decision_tree.len(), 10);
+}
+
+#[test]
+fn test_hive_config_timeouts() {
+    let cfg = hive_core::config::HiveConfig::default();
+    assert_eq!(cfg.worker_timeout_secs, 600);
+    assert_eq!(cfg.git_timeout_secs, 120);
 }

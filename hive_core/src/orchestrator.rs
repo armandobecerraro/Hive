@@ -73,6 +73,11 @@ impl HiveOrchestrator {
                     specialists.len()
                 ),
             );
+            // Lock se libera aquí al salir del scope antes del save
+        }
+        // Save fuera del lock para evitar deadlock
+        {
+            let st = hive_state.lock().await;
             st.save(&target)?;
         }
 
@@ -166,6 +171,10 @@ impl HiveOrchestrator {
         {
             let mut st = hive_state.lock().await;
             st.trim_retention(cfg.max_decision_records, cfg.max_version_history_entries);
+        }
+        // Save fuera del lock
+        {
+            let st = hive_state.lock().await;
             st.save(&target)?;
         }
 

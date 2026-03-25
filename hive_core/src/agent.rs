@@ -371,9 +371,10 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Executes the assigned task
     pub async fn execute_task(&mut self) -> Result<String, Box<dyn std::error::Error>> {
-        println!(
-            "👷 Agent {} starting task: {}",
-            self.task.id, self.task.title
+        tracing::info!(
+            worker = %self.task.id,
+            title = %self.task.title,
+            "obrera inicia tarea"
         );
         self.status = TaskStatus::InProgress;
 
@@ -440,7 +441,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Analyzes and improves Rust codebase
     async fn analyze_rust(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔧 Analyzing Rust codebase...");
+        tracing::info!("analizando repositorio Rust");
         sleep(agent_work_pause()).await;
 
         let cargo_path = self.target_dir.join("Cargo.toml");
@@ -478,7 +479,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Analyzes and improves Python codebase
     async fn analyze_python(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🐍 Analyzing Python codebase...");
+        tracing::info!("analizando repositorio Python");
         sleep(agent_work_pause()).await;
 
         // Add requirements.txt if not present
@@ -495,7 +496,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Analyzes and improves JavaScript/TypeScript codebase
     async fn analyze_javascript(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("📦 Analyzing JavaScript/TypeScript codebase...");
+        tracing::info!("analizando repositorio JavaScript/TypeScript");
         sleep(agent_work_pause()).await;
 
         // Check for package.json
@@ -509,7 +510,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Optimizes framework integration
     async fn optimize_framework(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("⚙️  Optimizing framework integration...");
+        tracing::info!("optimizando integración de framework");
         sleep(agent_work_pause()).await;
 
         // Add framework-specific improvements based on detected frameworks
@@ -533,7 +534,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Addresses technical debt
     async fn address_technical_debt(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔧 Addressing technical debt...");
+        tracing::info!("resolviendo deuda técnica");
         sleep(agent_work_pause()).await;
 
         // Create technical debt resolution report
@@ -544,7 +545,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Improves CI/CD pipelines
     async fn improve_cicd(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🚀 Improving CI/CD pipelines...");
+        tracing::info!("mejorando pipelines CI/CD");
         sleep(agent_work_pause()).await;
 
         // Create GitHub Actions workflow if not present
@@ -560,7 +561,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Enhances test coverage
     async fn enhance_tests(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🧪 Enhancing test coverage...");
+        tracing::info!("mejorando cobertura de tests");
         sleep(agent_work_pause()).await;
 
         // Create test directory if not present
@@ -576,7 +577,7 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
 
     /// Performs generic analysis
     async fn generic_analysis(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 Performing generic analysis...");
+        tracing::info!("realizando análisis genérico");
         sleep(agent_work_pause()).await;
 
         if self.evolution_stamp.is_empty() {
@@ -648,7 +649,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn analyze_rust_improve(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🧰 Rust — revisión y mejora (sin ensuciar main.rs)...");
+        tracing::info!("Rust — revisión y mejora");
         sleep(agent_work_pause()).await;
         let body = "- Ejecutar `cargo fmt` y `cargo clippy -- -D warnings` en local o CI.\n\
              - Revisar `Cargo.toml`: `edition`, límites de dependencias y features.\n\
@@ -659,7 +660,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn analyze_python_improve(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🐍 Python — revisión y mejora...");
+        tracing::info!("Python — revisión y mejora");
         sleep(agent_work_pause()).await;
         let body = "- Tipado: `mypy` o `pyright` en modo estricto donde sea razonable.\n\
              - Formato: `ruff format` / `black` y `ruff check`.\n\
@@ -670,7 +671,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn analyze_javascript_improve(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("📦 JS/TS — revisión y mejora...");
+        tracing::info!("JS/TS — revisión y mejora");
         sleep(agent_work_pause()).await;
         let body = "- `npm audit` / `pnpm audit` y actualizar dependencias con changelog.\n\
              - Lint (`eslint`) y formato (`prettier`) unificados en el repo.\n\
@@ -681,7 +682,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn improve_notes_framework(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("⚙️ Framework — notas de mejora...");
+        tracing::info!("Framework — notas de mejora");
         sleep(agent_work_pause()).await;
         let fw = if self.profile.frameworks.is_empty() {
             "(ninguno detectado)".to_string()
@@ -699,7 +700,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn improve_notes_debt(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔧 Deuda técnica — notas de mejora...");
+        tracing::info!("Deuda técnica — notas de mejora");
         sleep(agent_work_pause()).await;
         let body = "- Inventariar TODO/FIXME y enlazar a issues.\n\
              - Sustituir APIs deprecadas; eliminar código muerto.\n\
@@ -709,7 +710,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn improve_notes_cicd(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🚀 CI/CD — notas de mejora...");
+        tracing::info!("CI/CD — notas de mejora");
         sleep(agent_work_pause()).await;
         let body = "- Cache de dependencias en CI; jobs paralelos cuando sea seguro.\n\
              - Tests y linters en cada PR.\n\
@@ -719,7 +720,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn improve_notes_tests(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🧪 Tests — notas de mejora...");
+        tracing::info!("Tests — notas de mejora");
         sleep(agent_work_pause()).await;
         let body = "- Pirámide de tests: unitarios + integración donde aporte valor.\n\
              - Datos deterministas; evitar sleeps frágiles.\n\
@@ -729,7 +730,7 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
     }
 
     async fn generic_improve_notes(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 Revisión general — notas de mejora...");
+        tracing::info!("revisión general — notas de mejora");
         sleep(agent_work_pause()).await;
         let langs = self.profile.languages.join(", ");
         let body = format!(
@@ -824,21 +825,21 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
         let mut file = fs::File::create(&file_path)?;
         file.write_all(content.as_bytes())?;
 
-        println!("📝 Created/updated file: {}", relative_path);
+        tracing::info!(path = %relative_path, "archivo creado/actualizado");
         Ok(())
     }
 
     /// Marks the agent as approved
     pub fn mark_as_approved(&mut self) {
         self.status = TaskStatus::Completed;
-        println!("✅ Agent {} approved and completed", self.task.id);
+        tracing::info!(worker = %self.task.id, "obrera aprobada y completada");
     }
 
     /// Marks the agent as needing revision
     pub fn mark_as_needs_revision(&mut self, feedback: Vec<String>) {
         self.status = TaskStatus::Pending;
         self.feedback = feedback;
-        println!("🔄 Agent {} needs revision", self.task.id);
+        tracing::info!(worker = %self.task.id, "obrera necesita revisión");
     }
 
     /// Marks the agent as under review

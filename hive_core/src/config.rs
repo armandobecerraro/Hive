@@ -22,6 +22,10 @@ pub struct HiveConfig {
     pub protect_main: bool,
     /// Rama donde convergen merges aprobados y `HIVE_OBJECTIVE.md` (por defecto `main` si `protect_main` es false, o `hive/integration` si es true y no se define env).
     pub integration_branch: String,
+    /// Timeout máximo por obrera individual (segundos). 0 = sin límite.
+    pub worker_timeout_secs: u64,
+    /// Timeout para operaciones Git (segundos). 0 = sin límite.
+    pub git_timeout_secs: u64,
 }
 
 impl Default for HiveConfig {
@@ -35,6 +39,8 @@ impl Default for HiveConfig {
             run_tests_before_mr: false,
             protect_main: false,
             integration_branch: "main".to_string(),
+            worker_timeout_secs: 600,
+            git_timeout_secs: 120,
         }
     }
 }
@@ -120,6 +126,16 @@ impl HiveConfig {
             }
         };
 
+        let worker_timeout_secs = std::env::var("HIVE_WORKER_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(600);
+
+        let git_timeout_secs = std::env::var("HIVE_GIT_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(120);
+
         Self {
             poll_interval: Duration::from_secs(poll_secs),
             max_decision_records,
@@ -129,6 +145,8 @@ impl HiveConfig {
             run_tests_before_mr,
             protect_main,
             integration_branch,
+            worker_timeout_secs,
+            git_timeout_secs,
         }
     }
 

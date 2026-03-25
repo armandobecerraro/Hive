@@ -131,11 +131,22 @@ fn count_warnings(repo_root: &Path) -> u32 {
     }
 }
 
+/// Sanitiza un nombre de rama para uso seguro en comandos Git.
+/// Solo permite alfanuméricos, guiones, guiones bajos, barras y puntos.
+fn sanitize_branch_name(branch: &str) -> String {
+    branch
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '/' | '.'))
+        .collect()
+}
+
 /// Calcula diff de la rama respecto a main
 fn get_branch_diff_stats(repo_root: &Path, branch: &str) -> (u32, u32, u32) {
+    let safe_branch = sanitize_branch_name(branch);
+    let diff_spec = format!("main...{safe_branch}");
     let output = std::process::Command::new("git")
         .current_dir(repo_root)
-        .args(["diff", "--stat", &format!("main...{branch}")])
+        .args(["diff", "--stat", &diff_spec])
         .output();
 
     match output {
@@ -175,7 +186,7 @@ fn get_branch_diff_stats(repo_root: &Path, branch: &str) -> (u32, u32, u32) {
 }
 
 /// Calcula score de calidad basado en métricas
-fn calculate_quality_score(tests_passed: bool, warnings: u32, files_changed: u32) -> u8 {
+pub fn calculate_quality_score(tests_passed: bool, warnings: u32, files_changed: u32) -> u8 {
     let mut score: i32 = 70; // Base
 
     if tests_passed {

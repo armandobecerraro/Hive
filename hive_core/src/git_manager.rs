@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use git2::{build::CheckoutBuilder, BranchType, Repository, Signature};
 use std::path::{Path, PathBuf};
+use tracing::info;
 
 /// Manages Git operations for the Hive system
 pub struct GitManager {
@@ -32,14 +33,13 @@ impl GitManager {
         match Repository::open(path) {
             Ok(repo) => {
                 self.repo = Some(repo);
-                println!("📁 Opened existing Git repository");
+                info!("repositorio Git abierto");
                 Ok(())
             }
             Err(_) => {
-                // Repository doesn't exist, create one
                 let repo = Repository::init(path)?;
                 self.repo = Some(repo);
-                println!("📁 Initialized new Git repository");
+                info!("repositorio Git inicializado");
                 Ok(())
             }
         }
@@ -56,7 +56,7 @@ impl GitManager {
         // Create the branch
         repo.branch(branch_name, &head_commit, false)?;
 
-        println!("🌿 Created branch: {}", branch_name);
+        info!(name = %branch_name, "rama creada");
         Ok(())
     }
 
@@ -78,7 +78,7 @@ impl GitManager {
         checkout.force();
         repo.checkout_tree(tree.as_object(), Some(&mut checkout))?;
 
-        println!("✅ Checked out branch: {}", branch_name);
+        info!(name = %branch_name, "rama checkout completado");
         Ok(())
     }
 
@@ -123,7 +123,7 @@ impl GitManager {
             &parent_commit.iter().collect::<Vec<_>>(),
         )?;
 
-        println!("💾 Committed changes: {} ({})", message, commit_id);
+        info!(message = %message, commit = %commit_id, "cambios commiteados");
         Ok(())
     }
 
@@ -132,11 +132,9 @@ impl GitManager {
         &self,
         branch_name: &str,
         title: &str,
-        description: &str,
+        _description: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("📤 Creating Pull Request for branch: {}", branch_name);
-        println!("   Title: {}", title);
-        println!("   Description: {}", description);
+        info!(branch = %branch_name, title = %title, "registrando MR");
         Ok(())
     }
 
@@ -196,7 +194,7 @@ impl GitManager {
             &[&head, &branch_commit],
         )?;
 
-        println!("🔀 Merged branch '{}' into {}", branch_name, base);
+        info!(branch = %branch_name, target = %base, "rama fusionada");
         Ok(())
     }
 
