@@ -20,7 +20,6 @@ fn agent_work_pause() -> Duration {
     }
 }
 use crate::discovery::RepositoryProfile;
-use crate::git_manager::GitManager;
 use crate::request::HiveWorkMode;
 use crate::work::{TaskStatus, WorkerTask};
 use tracing::info;
@@ -30,7 +29,6 @@ pub struct WorkerAgent {
     pub task: WorkerTask,
     pub target_dir: PathBuf,
     pub profile: RepositoryProfile,
-    pub git_manager: GitManager,
     pub status: TaskStatus,
     pub feedback: Vec<String>,
     /// Etiqueta de pasada (p. ej. timestamp); vacío en tests — desactiva huellas en disco.
@@ -42,13 +40,8 @@ pub struct WorkerAgent {
 
 impl WorkerAgent {
     /// Crea un agente sin huella de evolución en disco (adecuado para tests).
-    pub fn new(
-        task: WorkerTask,
-        target_dir: PathBuf,
-        profile: RepositoryProfile,
-        git_manager: GitManager,
-    ) -> Self {
-        Self::with_evolution(task, target_dir, profile, git_manager, String::new())
+    pub fn new(task: WorkerTask, target_dir: PathBuf, profile: RepositoryProfile) -> Self {
+        Self::with_evolution(task, target_dir, profile, String::new())
     }
 
     /// Igual que [`Self::new`], pero registra pasadas en `EVOLUTION.md` / `.hive/evolution.log`.
@@ -56,14 +49,12 @@ impl WorkerAgent {
         task: WorkerTask,
         target_dir: PathBuf,
         profile: RepositoryProfile,
-        git_manager: GitManager,
         evolution_stamp: String,
     ) -> Self {
         Self {
             task,
             target_dir,
             profile,
-            git_manager,
             status: TaskStatus::Pending,
             feedback: Vec::new(),
             evolution_stamp,
@@ -863,7 +854,6 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
 mod tests {
     use super::*;
     use crate::discovery::{RepositoryProfile, SpecialistProfile, TechnicalDebtHints};
-    use crate::git_manager::GitManager;
     use crate::request::HiveWorkMode;
     use crate::work::{TaskStatus, WorkerBranchMode, WorkerTask};
     use tempfile::TempDir;
@@ -897,12 +887,7 @@ mod tests {
             code_patterns: vec![],
         };
 
-        let agent = WorkerAgent::new(
-            task,
-            temp_dir.path().to_path_buf(),
-            profile,
-            GitManager::new(),
-        );
+        let agent = WorkerAgent::new(task, temp_dir.path().to_path_buf(), profile);
 
         assert_eq!(agent.status, TaskStatus::Pending);
     }
@@ -933,8 +918,7 @@ mod tests {
             security_issues: vec![],
             code_patterns: vec![],
         };
-        let mut agent =
-            WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
+        let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile);
         agent.mark_as_under_review();
         assert_eq!(agent.status, TaskStatus::UnderReview);
         agent.mark_as_needs_revision(vec!["fb".into()]);
@@ -972,8 +956,7 @@ mod tests {
             security_issues: vec![],
             code_patterns: vec![],
         };
-        let mut agent =
-            WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
+        let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile);
         let msg = agent.execute_task().await.expect("execute");
         assert!(msg.contains("completed"));
         assert_eq!(agent.status, TaskStatus::Completed);
@@ -1006,8 +989,7 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let mut agent =
-                WorkerAgent::new(task, tmp.path().to_path_buf(), profile, GitManager::new());
+            let mut agent = WorkerAgent::new(task, tmp.path().to_path_buf(), profile);
             agent.execute_task().await.expect(key);
         });
     }
@@ -1179,7 +1161,6 @@ mod tests {
             task_improve("rust"),
             tmp.path().to_path_buf(),
             profile,
-            GitManager::new(),
             "2026-01-01 12:00:00 UTC · MR intento 1".into(),
         );
         agent.execute_task().await.unwrap();
@@ -1220,7 +1201,6 @@ mod tests {
                 task_improve(key),
                 tmp.path().to_path_buf(),
                 profile,
-                GitManager::new(),
                 format!("stamp-{tag}"),
             );
             agent.execute_task().await.unwrap();
@@ -1244,7 +1224,6 @@ mod tests {
             task_improve("ext_log"),
             tmp.path().to_path_buf(),
             profile,
-            GitManager::new(),
             "g1".into(),
         );
         agent.execute_task().await.unwrap();
@@ -1282,13 +1261,8 @@ mod tests {
             mission_brief: String::new(),
             work_mode: HiveWorkMode::Build,
         };
-        let mut agent = WorkerAgent::with_evolution(
-            task,
-            tmp.path().to_path_buf(),
-            profile,
-            GitManager::new(),
-            "evo-x".into(),
-        );
+        let mut agent =
+            WorkerAgent::with_evolution(task, tmp.path().to_path_buf(), profile, "evo-x".into());
         agent.execute_task().await.unwrap();
         assert!(tmp.path().join("src/lib.rs").exists());
         assert!(tmp.path().join("README.md").exists());
@@ -1322,13 +1296,8 @@ mod tests {
             mission_brief: String::new(),
             work_mode: HiveWorkMode::Build,
         };
-        let mut agent = WorkerAgent::with_evolution(
-            task,
-            tmp.path().to_path_buf(),
-            profile,
-            GitManager::new(),
-            "pasada-z".into(),
-        );
+        let mut agent =
+            WorkerAgent::with_evolution(task, tmp.path().to_path_buf(), profile, "pasada-z".into());
         agent.execute_task().await.unwrap();
         let rep = std::fs::read_to_string(tmp.path().join("ANALYSIS_REPORT.md")).unwrap();
         assert!(rep.contains("ext_toml"));
@@ -1360,13 +1329,8 @@ mod tests {
             mission_brief: String::new(),
             work_mode: HiveWorkMode::Build,
         };
-        let mut agent = WorkerAgent::with_evolution(
-            task,
-            tmp.path().to_path_buf(),
-            profile,
-            GitManager::new(),
-            "ev-mark".into(),
-        );
+        let mut agent =
+            WorkerAgent::with_evolution(task, tmp.path().to_path_buf(), profile, "ev-mark".into());
         agent.execute_task().await.unwrap();
         assert!(tmp.path().join("EVOLUTION.md").exists());
         assert!(tmp.path().join(".hive/evolution.log").exists());

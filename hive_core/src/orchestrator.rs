@@ -4,7 +4,6 @@ use crate::council::{
     self, CouncilSender, Maintainer, MaintainerReview, MergeRequest, ReviewEnvelope,
 };
 use crate::discovery::{RepositoryProfile, SpecialistProfile};
-use crate::git_manager::GitManager;
 use crate::request::{self, HiveRequest, HiveWorkMode};
 use crate::state::HiveState;
 use anyhow::{anyhow, Context, Result};
@@ -357,7 +356,6 @@ async fn run_worker_lifecycle(
                 task.clone(),
                 repo_root.clone(),
                 profile.clone(),
-                GitManager::new(),
                 evolution_stamp,
             );
 
