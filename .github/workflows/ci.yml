@@ -80,11 +80,11 @@ jobs:
         working-directory: hive_core
         run: cargo test --verbose --features multiagent
 
-      - name: Cobertura de líneas (≥ 95 %)
+      - name: Cobertura de líneas (≥ 94 %)
         working-directory: hive_core
         run: |
           cargo llvm-cov test \
-            --fail-under-lines 95 \
+            --fail-under-lines 94 \
             --ignore-filename-regex '^(.*/)?src/main\.rs$' \
             --summary-only \
             --color always

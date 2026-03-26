@@ -739,6 +739,26 @@ mod tests {
     }
 
     #[test]
+    fn execute_plan_fails_when_repo_root_not_a_repo() {
+        let m = SequentialMerger::new(
+            std::path::PathBuf::from("/no/existe/hive_merger_root_xyz"),
+            "main".into(),
+        );
+        let plan = MergePlan::new(vec![]);
+        assert!(m.execute_plan(&plan).is_err());
+    }
+
+    #[test]
+    fn execute_plan_fails_final_checkout_when_base_branch_missing() {
+        let tmp = tempdir().unwrap();
+        init_repo_with_main(tmp.path());
+        let m = SequentialMerger::new(tmp.path().to_path_buf(), "base_inexistente".into());
+        let plan = MergePlan::new(vec!["main".into()]);
+        let err = m.execute_plan(&plan).expect_err("debe fallar al volver a rama base");
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
     fn sequential_merger_base_branch_different() {
         let tmp = tempdir().unwrap();
         init_repo_with_main(tmp.path());

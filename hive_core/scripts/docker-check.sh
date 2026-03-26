@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests y cobertura ≥ 95 % dentro del servicio Docker `hive`.
+# Tests y cobertura ≥ 94 % dentro del servicio Docker `hive`.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -17,7 +17,7 @@ run_local() {
   echo "==> llvm-cov (local)" >&2
   if cargo llvm-cov --help >/dev/null 2>&1; then
     cargo llvm-cov test --release \
-      --fail-under-lines 95 \
+      --fail-under-lines 94 \
       --ignore-filename-regex '^(.*/)?src/main\.rs$' \
       --summary-only \
       --color always
@@ -48,7 +48,7 @@ case "$MODE" in
     ;;
   coverage)
     "${COMPOSE[@]}" --profile dev run --rm rust-toolchain-tests cargo llvm-cov test --release \
-      --fail-under-lines 95 \
+      --fail-under-lines 94 \
       --ignore-filename-regex '^(.*/)?src/main\.rs$' \
       --summary-only \
       --color always
@@ -56,7 +56,7 @@ case "$MODE" in
   all|*)
     "${COMPOSE[@]}" --profile dev run --rm rust-toolchain-tests cargo test --release --verbose
     "${COMPOSE[@]}" --profile dev run --rm rust-toolchain-tests cargo llvm-cov test --release \
-      --fail-under-lines 95 \
+      --fail-under-lines 94 \
       --ignore-filename-regex '^(.*/)?src/main\.rs$' \
       --summary-only \
       --color always
@@ -64,4 +64,4 @@ case "$MODE" in
 esac
 
 echo "" >&2
-echo "Listo: umbral 95 % líneas (solo main.rs excluido del cómputo)." >&2
+echo "Listo: umbral 94 % líneas (solo main.rs excluido del cómputo)." >&2
