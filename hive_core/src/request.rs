@@ -1005,4 +1005,21 @@ mod tests {
         assert_eq!(super::parse_stack("invalid"), None);
         assert_eq!(super::parse_stack(""), None);
     }
+
+    #[test]
+    #[serial]
+    fn read_client_feedback_none_sin_archivos_ni_env() {
+        std::env::remove_var("HIVE_CLIENT_FEEDBACK");
+        let t = tempdir().unwrap();
+        assert!(super::read_client_feedback_text(t.path())
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn archive_client_feedback_no_op_si_no_existe() {
+        let t = tempdir().unwrap();
+        super::archive_client_feedback_file(t.path()).unwrap();
+        assert!(!t.path().join(super::CLIENT_FEEDBACK_FILENAME).exists());
+    }
 }

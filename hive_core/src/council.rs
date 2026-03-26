@@ -480,4 +480,18 @@ mod tests {
         // Muchos warnings reducen el score significativamente
         assert!(calculate_quality_score(true, 50, 5) < 60);
     }
+
+    #[test]
+    fn calculate_quality_large_diff_reduces_score() {
+        let large = calculate_quality_score(true, 0, 25);
+        let moderate = calculate_quality_score(true, 0, 5);
+        assert!(large < moderate);
+    }
+
+    #[test]
+    fn calculate_quality_zero_files_no_moderate_bonus() {
+        let none = calculate_quality_score(true, 0, 0);
+        let few = calculate_quality_score(true, 0, 4);
+        assert!(few > none);
+    }
 }

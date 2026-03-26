@@ -1757,6 +1757,24 @@ mod tests {
         assert_eq!(read_version_string(tmp.path()).await.unwrap(), "9.8.7");
     }
 
+    #[tokio::test]
+    async fn read_version_string_invalid_json_defaults() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("version.json"), "not-json").unwrap();
+        assert_eq!(read_version_string(tmp.path()).await.unwrap(), "0.0.0");
+    }
+
+    #[tokio::test]
+    async fn read_version_string_missing_file_defaults() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(read_version_string(tmp.path()).await.unwrap(), "0.0.0");
+    }
+
+    #[test]
+    fn bump_patch_numeric_patch_overflow_saturation() {
+        assert_eq!(bump_patch("1.2.4294967295"), "1.2.4294967295"); // parse saturates +1 in u32
+    }
+
     #[test]
     fn merge_branch_into_main_derived_ok() {
         let tmp = tempfile::tempdir().unwrap();

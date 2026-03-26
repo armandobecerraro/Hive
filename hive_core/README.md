@@ -127,7 +127,7 @@ Tests unitarios e integración:
 cargo test
 ```
 
-**Escenarios E2E** (`tests/e2e_scenarios.rs`): validan la colmena sobre directorios temporales — **greenfield Rust** (repo desde cero + `cargo check` + **smoke `cargo run`** + README / `.gitignore` / `edition`), **segundo ciclo en modo mejora**, **archivo de feedback del cliente** y **greenfield Python** (`python3 -m py_compile main.py` si existe). Requieren `cargo` en `PATH` (y `python3` para la parte Python); usan `HIVE_SKIP_RESOURCE_GATE=1` para no bloquearse en CPU/RAM.
+**Escenarios E2E** (`tests/e2e_scenarios.rs`): validan la colmena sobre directorios temporales — **greenfield Rust** (repo desde cero + `cargo check` + **smoke `cargo run`** + **`cargo fmt --check`** + **`cargo clippy -D warnings`** + README / `.gitignore` / `edition`), **segundo ciclo en modo mejora**, **archivo de feedback del cliente** y **greenfield Python** (`python3 -m py_compile main.py` si existe). Requieren `cargo` / `rustfmt` / `clippy` en toolchain (y `python3` para la parte Python); usan `HIVE_SKIP_RESOURCE_GATE=1` para no bloquearse en CPU/RAM.
 
 Solo esos escenarios:
 ```bash

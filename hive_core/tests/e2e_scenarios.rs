@@ -79,9 +79,36 @@ fn assert_rust_binary_runs_smoke(repo: &Path) {
     );
 }
 
+/// Caja blanca: estilo y lints del artefacto Rust (mismas reglas que en CI del propio Hive).
+fn assert_rust_fmt_and_clippy_clean(repo: &Path) {
+    let fmt = Command::new("cargo")
+        .current_dir(repo)
+        .args(["fmt", "--all", "--", "--check"])
+        .output()
+        .expect("cargo fmt");
+    assert!(
+        fmt.status.success(),
+        "cargo fmt --check falló:\n{}",
+        String::from_utf8_lossy(&fmt.stderr)
+    );
+    let clip = Command::new("cargo")
+        .current_dir(repo)
+        .args(["clippy", "--quiet", "--", "-D", "warnings"])
+        .output()
+        .expect("cargo clippy");
+    assert!(
+        clip.status.success(),
+        "cargo clippy -D warnings falló:\n{}",
+        String::from_utf8_lossy(&clip.stderr)
+    );
+}
+
 fn assert_rust_best_practices_basics(repo: &Path) {
     let toml = fs::read_to_string(repo.join("Cargo.toml")).expect("Cargo.toml");
-    assert!(toml.contains("[package]"), "Cargo.toml debe declarar [package]");
+    assert!(
+        toml.contains("[package]"),
+        "Cargo.toml debe declarar [package]"
+    );
     assert!(
         toml.contains("edition"),
         "Cargo.toml debe fijar edition (práctica recomendada)"
@@ -107,13 +134,26 @@ async fn e2e_greenfield_rust_quality_gates() {
 
     run_queen(repo).await;
 
-    assert!(repo.join(".git").exists(), "debe inicializarse repositorio Git");
-    assert!(repo.join("hive.json").exists(), "debe persistirse hive.json");
-    assert!(repo.join("Cargo.toml").exists(), "bootstrap Rust: Cargo.toml");
-    assert!(repo.join("src/main.rs").exists(), "bootstrap Rust: src/main.rs");
+    assert!(
+        repo.join(".git").exists(),
+        "debe inicializarse repositorio Git"
+    );
+    assert!(
+        repo.join("hive.json").exists(),
+        "debe persistirse hive.json"
+    );
+    assert!(
+        repo.join("Cargo.toml").exists(),
+        "bootstrap Rust: Cargo.toml"
+    );
+    assert!(
+        repo.join("src/main.rs").exists(),
+        "bootstrap Rust: src/main.rs"
+    );
     assert_rust_best_practices_basics(repo);
     assert_rust_project_passes_cargo_check(repo);
     assert_rust_binary_runs_smoke(repo);
+    assert_rust_fmt_and_clippy_clean(repo);
 
     teardown_e2e_env();
 }
@@ -207,6 +247,307 @@ async fn e2e_python_greenfield_compiles_minimal() {
             String::from_utf8_lossy(&out.stderr)
         );
     }
+
+    teardown_e2e_env();
+}
+
+// ── Escenarios adicionales: creación de repositorios ──────────────────
+
+#[tokio::test]
+#[serial]
+async fn e2e_node_greenfield_creates_package_json() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+    let req = r#"{
+  "title": "E2E Hive Node",
+  "description": "Microservicio mock para prueba E2E.",
+  "stack": "node_minimal",
+  "force_scaffold": false
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+
+    run_queen(repo).await;
+
+    assert!(repo.join(".git").exists(), "debe inicializarse Git");
+    assert!(
+        repo.join("hive.json").exists(),
+        "debe persistirse hive.json"
+    );
+    assert!(
+        repo.join("package.json").exists(),
+        "bootstrap Node: package.json"
+    );
+    assert!(repo.join("index.js").exists(), "bootstrap Node: index.js");
+    assert!(repo.join("README.md").exists(), "debe existir README");
+    assert!(
+        repo.join("docs/HIVE_SPEC.md").exists(),
+        "debe existir spec Hive"
+    );
+
+    let pkg = fs::read_to_string(repo.join("package.json")).unwrap();
+    assert!(
+        pkg.contains("\"name\""),
+        "package.json debe tener campo name"
+    );
+    assert!(
+        pkg.contains("\"version\""),
+        "package.json debe tener campo version"
+    );
+
+    teardown_e2e_env();
+}
+
+#[tokio::test]
+#[serial]
+async fn e2e_rust_greenfield_with_force_scaffold() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+    let req = r#"{
+  "title": "E2E Force Scaffold",
+  "description": "Proyecto con force_scaffold sobre archivos existentes.",
+  "stack": "rust_binary",
+  "force_scaffold": true
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+    fs::write(repo.join("existing.txt"), "archivo previo").unwrap();
+
+    run_queen(repo).await;
+
+    assert!(repo.join(".git").exists());
+    assert!(
+        repo.join("Cargo.toml").exists(),
+        "force_scaffold debe crear Cargo.toml"
+    );
+    assert!(
+        repo.join("src/main.rs").exists(),
+        "force_scaffold debe crear src/main.rs"
+    );
+    assert!(
+        repo.join("existing.txt").exists(),
+        "archivo previo debe conservarse"
+    );
+
+    teardown_e2e_env();
+}
+
+#[tokio::test]
+#[serial]
+async fn e2e_multiple_cycles_increment_version() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+
+    let req = r#"{
+  "title": "E2E Versionado",
+  "description": "Proyecto para verificar incremento de versión.",
+  "stack": "rust_binary",
+  "force_scaffold": false
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+
+    run_queen(repo).await;
+
+    let v1 = fs::read_to_string(repo.join("version.json")).unwrap();
+    assert!(
+        v1.contains("0.1.0") || v1.contains("0.1.1"),
+        "versión inicial debe ser 0.1.x"
+    );
+
+    let state1 = HiveState::load_or_new(repo).expect("estado inicial");
+    let merges1 = state1.version_history.len();
+
+    fs::write(repo.join("hive.request.json"), EMPTY_REQUEST_IMPROVE).unwrap();
+    run_queen(repo).await;
+
+    let state2 = HiveState::load_or_new(repo).expect("estado segundo ciclo");
+    let merges2 = state2.version_history.len();
+    assert!(
+        merges2 >= merges1,
+        "segundo ciclo debe mantener o incrementar historial de versiones"
+    );
+
+    teardown_e2e_env();
+}
+
+#[tokio::test]
+#[serial]
+async fn e2e_existing_rust_repo_improve_mode() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname=\"existing\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src/main.rs"),
+        "fn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src/lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+    )
+    .unwrap();
+
+    let req = r#"{
+  "title": "",
+  "description": "",
+  "stack": "auto",
+  "force_scaffold": false
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+
+    run_queen(repo).await;
+
+    assert!(
+        repo.join(".git").exists(),
+        "debe inicializarse Git en repo existente"
+    );
+    assert!(
+        repo.join("hive.json").exists(),
+        "debe persistirse hive.json"
+    );
+    assert!(
+        repo.join("Cargo.toml").exists(),
+        "Cargo.toml debe conservarse"
+    );
+    assert!(
+        repo.join("src/main.rs").exists(),
+        "src/main.rs debe conservarse"
+    );
+    assert!(
+        repo.join("src/lib.rs").exists(),
+        "src/lib.rs debe conservarse"
+    );
+
+    teardown_e2e_env();
+}
+
+#[tokio::test]
+#[serial]
+async fn e2e_decision_log_grows_with_cycles() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+
+    let req = r#"{
+  "title": "Decisiones Test",
+  "description": "Verificar que el log de decisiones crece.",
+  "stack": "rust_binary",
+  "force_scaffold": false
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+
+    run_queen(repo).await;
+    let s1 = HiveState::load_or_new(repo).unwrap();
+    let d1 = s1.decision_tree.len();
+
+    fs::write(repo.join("hive.request.json"), EMPTY_REQUEST_IMPROVE).unwrap();
+    run_queen(repo).await;
+    let s2 = HiveState::load_or_new(repo).unwrap();
+    let d2 = s2.decision_tree.len();
+
+    assert!(
+        d2 > d1,
+        "segundo ciclo debe añadir decisiones: d1={d1} d2={d2}"
+    );
+
+    teardown_e2e_env();
+}
+
+// ── Escenarios de creación de repositorios con stacks mixtos ──────────
+
+#[tokio::test]
+#[serial]
+async fn e2e_auto_stack_detects_existing_python() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+
+    fs::write(repo.join("main.py"), "print('hello')").unwrap();
+    fs::write(repo.join("requirements.txt"), "requests==2.31.0\n").unwrap();
+
+    let req = r#"{
+  "title": "",
+  "description": "",
+  "stack": "auto",
+  "force_scaffold": false
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+
+    run_queen(repo).await;
+
+    assert!(repo.join(".git").exists());
+    assert!(repo.join("hive.json").exists());
+    assert!(repo.join("main.py").exists(), "main.py debe conservarse");
+
+    teardown_e2e_env();
+}
+
+#[tokio::test]
+#[serial]
+async fn e2e_empty_repo_creates_rust_by_default() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+
+    let req = r#"{
+  "title": "Proyecto Default",
+  "description": "Repositorio vacío debe crear Rust por defecto.",
+  "stack": "auto",
+  "force_scaffold": false
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+
+    run_queen(repo).await;
+
+    assert!(repo.join(".git").exists());
+    assert!(repo.join("hive.json").exists());
+    assert!(
+        repo.join("Cargo.toml").exists(),
+        "repo vacío con auto debe crear Cargo.toml"
+    );
+    assert!(
+        repo.join("src/main.rs").exists(),
+        "repo vacío con auto debe crear src/main.rs"
+    );
+
+    teardown_e2e_env();
+}
+
+#[tokio::test]
+#[serial]
+async fn e2e_hive_objective_updated_after_merge() {
+    setup_e2e_env();
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path();
+
+    let req = r#"{
+  "title": "Objetivo Hive",
+  "description": "Verificar que HIVE_OBJECTIVE.md se actualiza tras merge.",
+  "stack": "rust_binary",
+  "force_scaffold": false
+}"#;
+    fs::write(repo.join("hive.request.json"), req).unwrap();
+
+    run_queen(repo).await;
+
+    assert!(
+        repo.join("HIVE_OBJECTIVE.md").exists(),
+        "debe existir HIVE_OBJECTIVE.md"
+    );
+    let obj = fs::read_to_string(repo.join("HIVE_OBJECTIVE.md")).unwrap();
+    assert!(
+        obj.contains("Objetivo operativo"),
+        "debe contener título del objetivo"
+    );
+    assert!(obj.contains("main"), "debe mencionar la rama principal");
 
     teardown_e2e_env();
 }

@@ -228,3 +228,258 @@ fn test_hive_config_timeouts() {
     assert_eq!(cfg.worker_timeout_secs, 600);
     assert_eq!(cfg.git_timeout_secs, 120);
 }
+
+// ── Tests de creación de repositorios ─────────────────────────────────
+
+#[test]
+fn test_colonize_and_analyze_typescript_repo() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("index.ts"), "console.log('hello');").unwrap();
+    fs::write(
+        temp_dir.path().join("tsconfig.json"),
+        r#"{"compilerOptions":{}}"#,
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize typescript");
+    assert!(!report.specialists.is_empty());
+    assert!(report.dna.extension_histogram.contains_key("ts"));
+}
+
+#[test]
+fn test_colonize_and_analyze_go_repo() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(
+        temp_dir.path().join("main.go"),
+        "package main\nfunc main() {}",
+    )
+    .unwrap();
+    fs::write(temp_dir.path().join("go.mod"), "module example.com/m\n").unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize go");
+    assert!(!report.specialists.is_empty());
+    assert!(report.dna.extension_histogram.contains_key("go"));
+}
+
+#[test]
+fn test_colonize_and_analyze_multi_language_repo() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("main.rs"), "fn main() {}").unwrap();
+    fs::write(temp_dir.path().join("index.js"), "console.log('hi')").unwrap();
+    fs::write(temp_dir.path().join("main.py"), "print('hello')").unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize polyglot");
+    assert!(report.dna.extension_histogram.contains_key("rs"));
+    assert!(report.dna.extension_histogram.contains_key("js"));
+    assert!(report.dna.extension_histogram.contains_key("py"));
+}
+
+// ── Tests de edición de repositorios ──────────────────────────────────
+
+#[test]
+fn test_specialist_profile_creation() {
+    let specialist = hive_core::discovery::SpecialistProfile {
+        language_key: "rust".into(),
+        prompt_blueprint: "Rust developer".into(),
+        suggested_tools: vec!["cargo".into(), "clippy".into()],
+        weight: 1.0,
+    };
+    assert_eq!(specialist.language_key, "rust");
+    assert_eq!(specialist.suggested_tools.len(), 2);
+    assert_eq!(specialist.weight, 1.0);
+}
+
+#[test]
+fn test_repository_profile_with_security_issues() {
+    let profile = hive_core::discovery::RepositoryProfile {
+        languages: vec!["rust".into()],
+        frameworks: vec!["tokio".into()],
+        technical_debt: hive_core::discovery::TechnicalDebtHints {
+            todo_markers: 3,
+            large_files: 1,
+            missing_readme: false,
+            missing_license: true,
+            sparse_tests: false,
+        },
+        specialists: vec![],
+        security_issues: vec![hive_core::discovery::SecurityIssue {
+            severity: hive_core::discovery::Severity::High,
+            category: hive_core::discovery::SecurityCategory::HardcodedSecret,
+            file: "config.rs".into(),
+            line: Some(42),
+            description: "API key hardcodeada".into(),
+            suggestion: "Usar variables de entorno".into(),
+        }],
+        code_patterns: vec![],
+    };
+    assert_eq!(profile.languages.len(), 1);
+    assert_eq!(profile.security_issues.len(), 1);
+    assert_eq!(profile.technical_debt.todo_markers, 3);
+}
+
+#[test]
+fn test_technical_debt_detection() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(
+        temp_dir.path().join("main.rs"),
+        "// TODO: fix this\n// FIXME: refactor this\nfn main() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize debt");
+    assert!(
+        report.dna.debt.todo_markers >= 1,
+        "debe detectar TODO/FIXME"
+    );
+}
+
+#[test]
+fn test_missing_readme_detection() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("main.rs"), "fn main() {}").unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize sin readme");
+    assert!(
+        report.dna.debt.missing_readme,
+        "debe detectar README faltante"
+    );
+}
+
+// ── Tests de orquestación ─────────────────────────────────────────────
+
+#[test]
+fn test_resource_policy_default() {
+    let policy = hive_core::orchestrator::ResourcePolicy::default();
+    assert_eq!(policy.max_cpu_percent, 88.0);
+    assert_eq!(policy.min_available_ram_bytes, 256 * 1024 * 1024);
+}
+
+#[test]
+fn test_git_policy_creation() {
+    let policy = hive_core::orchestrator::GitPolicy::new(true, "hive/integration".into());
+    assert!(policy.protect_main);
+    assert_eq!(policy.integration_branch, "hive/integration");
+}
+
+#[test]
+fn test_version_file_serialization() {
+    let vf = hive_core::orchestrator::VersionFile {
+        version: "1.2.3".into(),
+    };
+    let json = serde_json::to_string(&vf).unwrap();
+    assert!(json.contains("1.2.3"));
+    let parsed: hive_core::orchestrator::VersionFile = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.version, "1.2.3");
+}
+
+// ── Tests de discovery avanzados ──────────────────────────────────────
+
+#[test]
+fn test_deduce_specialists_for_python() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("app.py"), "print('hello')").unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize python");
+    let has_python = report
+        .specialists
+        .iter()
+        .any(|s| s.language_key == "python");
+    assert!(has_python, "debe deducir especialista Python");
+}
+
+#[test]
+fn test_deduce_specialists_for_javascript() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("app.js"), "console.log('hi')").unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize js");
+    let has_js = report.specialists.iter().any(|s| s.language_key == "js_ts");
+    assert!(has_js, "debe deducir especialista JS/TS");
+}
+
+#[test]
+fn test_manifest_detection() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize con manifest");
+    assert!(report
+        .dna
+        .manifest_hits
+        .iter()
+        .any(|m| m.contains("Cargo.toml")));
+}
+
+#[test]
+fn test_code_pattern_large_function() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut large_fn = String::new();
+    for i in 0..100 {
+        large_fn.push_str(&format!("    let x{i} = {i};\n"));
+    }
+    let code = format!("fn main() {{\n{large_fn}}}\n");
+    fs::write(temp_dir.path().join("main.rs"), &code).unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize large fn");
+    let has_large = report.dna.code_patterns.iter().any(|p| {
+        matches!(
+            p.pattern_type,
+            hive_core::discovery::PatternType::LargeFunction
+        )
+    });
+    assert!(has_large, "debe detectar función grande");
+}
+
+#[test]
+fn test_code_pattern_deep_nesting() {
+    let temp_dir = TempDir::new().unwrap();
+    let code = r#"
+fn main() {
+    if true {
+        if true {
+            if true {
+                if true {
+                    if true {
+                        println!("deep");
+                        println!("line2");
+                        println!("line3");
+                        println!("line4");
+                        println!("line5");
+                        println!("line6");
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    fs::write(temp_dir.path().join("main.rs"), code).unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let report = colonize_and_analyze(temp_dir.path()).expect("colonize deep nesting");
+    let has_deep = report.dna.code_patterns.iter().any(|p| {
+        matches!(
+            p.pattern_type,
+            hive_core::discovery::PatternType::DeepNesting
+        )
+    });
+    assert!(has_deep, "debe detectar anidación profunda");
+}

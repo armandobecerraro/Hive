@@ -754,7 +754,9 @@ mod tests {
         init_repo_with_main(tmp.path());
         let m = SequentialMerger::new(tmp.path().to_path_buf(), "base_inexistente".into());
         let plan = MergePlan::new(vec!["main".into()]);
-        let err = m.execute_plan(&plan).expect_err("debe fallar al volver a rama base");
+        let err = m
+            .execute_plan(&plan)
+            .expect_err("debe fallar al volver a rama base");
         assert!(!err.to_string().is_empty());
     }
 
