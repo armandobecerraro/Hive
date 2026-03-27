@@ -7,6 +7,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// Entrada de memoria (decisión o patrón aprendido).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,7 +83,9 @@ impl MemoryStore {
         if self.entries.len() > self.max_entries {
             self.entries.remove(0);
         }
-        let _ = self.save();
+        if let Err(e) = self.save() {
+            warn!(error = %e, "error persistiendo memoria a disco");
+        }
     }
 
     /// Busca entradas similares por similitud de texto (Jaccard simplificado).

@@ -124,9 +124,7 @@ impl WasmPluginRegistry {
             .iter()
             .find(|p| p.name == name)
             .context(format!("plugin '{name}' no encontrado"))?;
-        anyhow::bail!(
-            "ejecución WASM no disponible (motor embebido pendiente); plugin '{name}'"
-        );
+        anyhow::bail!("ejecución WASM no disponible (motor embebido pendiente); plugin '{name}'");
     }
 }
 

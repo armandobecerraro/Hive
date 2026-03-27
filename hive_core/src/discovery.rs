@@ -661,9 +661,11 @@ fn scan_tree(repo_root: &Path) -> Result<RepoDna> {
             if let Some(ext) = extension_of(&p) {
                 *extension_histogram.entry(ext).or_insert(0) += 1;
             }
+            // Skip archivos grandes para evitar consumo excesivo de memoria
             if let Ok(meta) = p.metadata() {
                 if meta.len() > MAX_FILE_BYTES_HINT {
                     large_files += 1;
+                    continue;
                 }
             }
             if let Ok(txt) = fs::read_to_string(&p) {

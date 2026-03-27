@@ -15,13 +15,13 @@ use bollard::image::CreateImageOptions;
 #[cfg(feature = "multiagent")]
 use bollard::Docker;
 #[cfg(feature = "multiagent")]
+use futures_util::StreamExt;
+#[cfg(feature = "multiagent")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "multiagent")]
 use std::path::Path;
 #[cfg(feature = "multiagent")]
 use tracing::info;
-#[cfg(feature = "multiagent")]
-use futures_util::StreamExt;
 
 /// Configuración del sandbox por obrera.
 #[cfg(feature = "multiagent")]
@@ -163,7 +163,10 @@ pub async fn run_in_sandbox(
         Err(_) => {
             info!(id = %container_id, "timeout: matando contenedor");
             let _ = docker
-                .kill_container::<String>(container_id, None::<bollard::container::KillContainerOptions<String>>)
+                .kill_container::<String>(
+                    container_id,
+                    None::<bollard::container::KillContainerOptions<String>>,
+                )
                 .await;
             (-1, true)
         }

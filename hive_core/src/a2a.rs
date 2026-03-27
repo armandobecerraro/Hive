@@ -164,7 +164,7 @@ impl A2AServer {
 
     /// Inicia el servidor A2A (escucha TCP).
     pub async fn start(&mut self) -> Result<()> {
-        let addr = format!("0.0.0.0:{}", self.port);
+        let addr = format!("127.0.0.1:{}", self.port);
         let listener = TcpListener::bind(&addr).await?;
         info!(addr = %addr, "servidor A2A escuchando");
 

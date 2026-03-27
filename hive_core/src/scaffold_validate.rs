@@ -85,3 +85,46 @@ fn run_cmd(repo: &Path, program: &str, args: &[&str], label: &str) -> Result<()>
     let stderr = String::from_utf8_lossy(&out.stderr);
     anyhow::bail!("{label} falló:\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_python_sin_main_py_retorna_ok() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No hay main.py, debe retornar Ok
+        let result = validate_python(tmp.path());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_node_sin_index_js_retorna_ok() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No hay index.js, debe retornar Ok
+        let result = validate_node(tmp.path());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_rust_sin_cargo_toml_retorna_ok() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No hay Cargo.toml, debe retornar Ok
+        let result = validate_rust(tmp.path());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_after_bootstrap_python_sin_archivos() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = validate_after_bootstrap(tmp.path(), ProjectStack::PythonApp);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_after_bootstrap_node_sin_archivos() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = validate_after_bootstrap(tmp.path(), ProjectStack::NodeMinimal);
+        assert!(result.is_ok());
+    }
+}

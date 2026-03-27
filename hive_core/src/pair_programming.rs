@@ -129,7 +129,7 @@ impl PairProgrammingServer {
 
     /// Inicia el servidor WebSocket.
     pub async fn start(&self) -> Result<()> {
-        let addr = format!("0.0.0.0:{}", self.port);
+        let addr = format!("127.0.0.1:{}", self.port);
         let listener = TcpListener::bind(&addr).await?;
         info!(addr = %addr, "servidor pair programming WebSocket escuchando");
 

@@ -60,9 +60,13 @@ pub struct Task {
 pub enum TaskStatus {
     #[default]
     Pending,
-    InProgress { worker_id: Uuid },
+    InProgress {
+        worker_id: Uuid,
+    },
     Completed,
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
 }
 
 /// Resultado de una tarea completada

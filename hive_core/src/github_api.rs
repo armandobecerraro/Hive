@@ -20,6 +20,7 @@ use tracing::info;
 pub struct GitHubConfig {
     pub owner: String,
     pub repo: String,
+    #[serde(skip)]
     pub token: String,
     pub base_branch: String,
 }
@@ -133,11 +134,7 @@ impl GitHubClient {
             .await
             .context("crear pull request")?;
 
-        let url_str = pr
-            .html_url
-            .as_ref()
-            .map(|u| u.as_str())
-            .unwrap_or("");
+        let url_str = pr.html_url.as_ref().map(|u| u.as_str()).unwrap_or("");
         info!(pr = pr.number, url = url_str, "PR creado en GitHub");
 
         Ok(CreatedPR {
