@@ -227,12 +227,12 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
         let words: Vec<&str> = text.split_whitespace().collect();
         for (i, word) in words.iter().enumerate() {
             let lower = word.to_lowercase();
-            if lower == "function" || lower == "fn" || lower == "func" || lower == "method" {
-                if i + 1 < words.len() {
-                    return words[i + 1]
-                        .trim_matches(|c| c == '(' || c == ':' || c == '{')
-                        .to_string();
-                }
+            if (lower == "function" || lower == "fn" || lower == "func" || lower == "method")
+                && i + 1 < words.len()
+            {
+                return words[i + 1]
+                    .trim_matches(|c| c == '(' || c == ':' || c == '{')
+                    .to_string();
             }
         }
         // Default function name based on task
@@ -326,8 +326,6 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
             "rust" => {
                 if self.target_dir.join("src/main.rs").exists() {
                     PathBuf::from("src/main.rs")
-                } else if self.target_dir.join("src/lib.rs").exists() {
-                    PathBuf::from("src/lib.rs")
                 } else {
                     PathBuf::from("src/lib.rs")
                 }

@@ -16,8 +16,10 @@ pub struct HiveConfig {
     pub maintainer_reject_before_approve: u32,
     /// Tras tantos rechazos del Consejo sobre la misma obrera, se **descarta** el trabajo (borra rama, vuelve a la línea de integración) y la cola **sigue** con otras tareas (evita bucles infinitos).
     pub max_mr_rejection_attempts: u32,
-    /// Si es true, antes de enviar el MR al Consejo ejecuta `cargo test` en repos con `Cargo.toml` (fallo → no se abre MR y se reintenta como rechazo lógico vía error en la obrera).
+    /// Si es true, antes de enviar el MR al Consejo ejecuta `cargo test` en repos con `Cargo.toml` (fallo → no se abre MR y se reintenta como rechazo lógico vía error en la obrera). Default: true; desactivar con `HIVE_RUN_TESTS_BEFORE_MR=0`.
     pub run_tests_before_mr: bool,
+    /// Tras crear el andamiaje greenfield, ejecuta comprobaciones de calidad (`cargo check`/`fmt`/`clippy`/`test`, etc.). Default: true; desactivar con `HIVE_VALIDATE_SCAFFOLD=0` si no hay toolchain en el entorno.
+    pub validate_scaffold: bool,
     /// Si es true, el enjambre no escribe ni fusiona en `main`; los merges y commits de hitos van a [`Self::integration_branch`].
     pub protect_main: bool,
     /// Rama donde convergen merges aprobados y `HIVE_OBJECTIVE.md` (por defecto `main` si `protect_main` es false, o `hive/integration` si es true y no se define env).
@@ -36,11 +38,23 @@ impl Default for HiveConfig {
             max_version_history_entries: 500,
             maintainer_reject_before_approve: 1,
             max_mr_rejection_attempts: 10,
-            run_tests_before_mr: false,
+            run_tests_before_mr: true,
+            validate_scaffold: true,
             protect_main: false,
             integration_branch: "main".to_string(),
             worker_timeout_secs: 600,
             git_timeout_secs: 120,
+        }
+    }
+}
+
+/// `true` si la variable no está definida o no es un desactivador explícito (`0`, `false`, `no`, `off`, `n`).
+fn env_enabled_default_true(key: &str) -> bool {
+    match std::env::var(key) {
+        Err(_) => true,
+        Ok(s) => {
+            let t = s.trim().to_ascii_lowercase();
+            !matches!(t.as_str(), "0" | "false" | "no" | "n" | "off")
         }
     }
 }
@@ -94,10 +108,8 @@ impl HiveConfig {
             .filter(|&n| n > 0)
             .unwrap_or(10);
 
-        let run_tests_before_mr = matches!(
-            std::env::var("HIVE_RUN_TESTS_BEFORE_MR").as_deref(),
-            Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
-        );
+        let run_tests_before_mr = env_enabled_default_true("HIVE_RUN_TESTS_BEFORE_MR");
+        let validate_scaffold = env_enabled_default_true("HIVE_VALIDATE_SCAFFOLD");
 
         let protect_main = matches!(
             std::env::var("HIVE_PROTECT_MAIN").as_deref(),
@@ -143,6 +155,7 @@ impl HiveConfig {
             maintainer_reject_before_approve,
             max_mr_rejection_attempts,
             run_tests_before_mr,
+            validate_scaffold,
             protect_main,
             integration_branch,
             worker_timeout_secs,
@@ -171,7 +184,8 @@ mod tests {
         assert_eq!(c.max_decision_records, 2000);
         assert_eq!(c.maintainer_reject_before_approve, 1);
         assert_eq!(c.max_mr_rejection_attempts, 10);
-        assert!(!c.run_tests_before_mr);
+        assert!(c.run_tests_before_mr);
+        assert!(c.validate_scaffold);
         assert!(!c.protect_main);
         assert_eq!(c.integration_branch, "main");
         assert!(c.validate().is_ok());
@@ -251,11 +265,28 @@ mod tests {
 
     #[test]
     #[serial]
-    fn from_env_run_tests_before_mr_true() {
+    fn from_env_run_tests_before_mr_defaults_true_when_unset() {
+        std::env::remove_var("HIVE_RUN_TESTS_BEFORE_MR");
+        let c = HiveConfig::from_env();
+        assert!(c.run_tests_before_mr);
+    }
+
+    #[test]
+    #[serial]
+    fn from_env_run_tests_before_mr_explicit_true() {
         std::env::set_var("HIVE_RUN_TESTS_BEFORE_MR", "yes");
         let c = HiveConfig::from_env();
         std::env::remove_var("HIVE_RUN_TESTS_BEFORE_MR");
         assert!(c.run_tests_before_mr);
+    }
+
+    #[test]
+    #[serial]
+    fn from_env_run_tests_before_mr_off() {
+        std::env::set_var("HIVE_RUN_TESTS_BEFORE_MR", "0");
+        let c = HiveConfig::from_env();
+        std::env::remove_var("HIVE_RUN_TESTS_BEFORE_MR");
+        assert!(!c.run_tests_before_mr);
     }
 
     #[test]
@@ -281,6 +312,15 @@ mod tests {
         let c = HiveConfig::from_env();
         std::env::remove_var("HIVE_RUN_TESTS_BEFORE_MR");
         assert!(c.run_tests_before_mr);
+    }
+
+    #[test]
+    #[serial]
+    fn from_env_validate_scaffold_off() {
+        std::env::set_var("HIVE_VALIDATE_SCAFFOLD", "0");
+        let c = HiveConfig::from_env();
+        std::env::remove_var("HIVE_VALIDATE_SCAFFOLD");
+        assert!(!c.validate_scaffold);
     }
 
     #[test]

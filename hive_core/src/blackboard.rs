@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// Tipo de especialista/agente
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum Specialist {
     Rust,
     Python,
@@ -24,13 +24,8 @@ pub enum Specialist {
     TypeScript,
     Test,
     Docs,
+    #[default]
     Generic,
-}
-
-impl Default for Specialist {
-    fn default() -> Self {
-        Specialist::Generic
-    }
 }
 
 impl std::fmt::Display for Specialist {
@@ -61,18 +56,13 @@ pub struct Task {
     pub status: TaskStatus,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TaskStatus {
+    #[default]
     Pending,
     InProgress { worker_id: Uuid },
     Completed,
     Failed { reason: String },
-}
-
-impl Default for TaskStatus {
-    fn default() -> Self {
-        TaskStatus::Pending
-    }
 }
 
 /// Resultado de una tarea completada

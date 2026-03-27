@@ -136,7 +136,7 @@ impl Brain {
     pub async fn analyze_and_generate_tasks(
         &self,
         report: &ColonizationReport,
-        target_dir: &PathBuf,
+        target_dir: &std::path::Path,
     ) -> Result<Vec<Task>> {
         // Build analysis prompt
         let prompt = self.build_analysis_prompt(report, target_dir);
@@ -189,7 +189,7 @@ impl Brain {
         Ok(parse_llm_code_response(&raw, &task.target_file))
     }
 
-    fn build_analysis_prompt(&self, report: &ColonizationReport, target_dir: &PathBuf) -> String {
+    fn build_analysis_prompt(&self, report: &ColonizationReport, target_dir: &std::path::Path) -> String {
         let dna = &report.dna;
         let mut prompt = format!(
             "Eres el Cerebro de un sistema multi-agente de desarrollo.\n\n\
@@ -263,6 +263,7 @@ impl Brain {
 
         // Simple parser - looks for FILE: and TASK: patterns
         let mut current_file = String::new();
+        #[allow(unused_assignments)]
         let mut current_task = String::new();
         let mut current_specialist = self.specialist_type;
 

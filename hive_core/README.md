@@ -30,7 +30,26 @@ The Hive is an autonomous development orchestration system written in Rust. At i
 
 11. **`git_manager.rs`** — Utilidades Git sobre `libgit2`.
 
-*(Módulos multi-agente opcionales bajo `--features multiagent`: `blackboard`, `brain`, `worker`.)*
+12. **`scaffold_validate.rs`** — Validación post-bootstrap del andamiaje greenfield.
+
+*(Módulos multi-agente legacy bajo `--features multiagent`: `blackboard`, `brain`, `worker`.)*
+
+### Módulos nuevos 2026
+
+| # | Módulo | Feature | Descripción |
+|---|--------|---------|-------------|
+| 13 | `sandbox.rs` | `multiagent` | Sandbox Docker aislado por obrera (bollard) |
+| 14 | `github_api.rs` | `multiagent` | Integración GitHub API real (octocrab) |
+| 15 | `mcp.rs` | `multiagent` | Model Context Protocol — herramientas estandarizadas |
+| 16 | `task_dag.rs` | `multiagent` | DAG de tareas con ejecución paralela (petgraph) |
+| 17 | `telemetry.rs` | `multiagent` | OpenTelemetry observabilidad distribuida |
+| 18 | `a2a.rs` | `multiagent` | Agent-to-Agent protocol (Google A2A) |
+| 19 | `wasm_plugins.rs` | `multiagent` | Plugins WASM para especialistas dinámicos |
+| 20 | `pair_programming.rs` | `multiagent` | WebSocket interactivo para pair programming |
+| 21 | `memory.rs` | — | Memoria persistente RAG (vector store local) |
+| 22 | `swebench.rs` | — | SWE-bench benchmark de evaluación |
+| 23 | `multi_repo.rs` | — | Soporte multi-repo (hive.workspace.json) |
+| 24 | `cicd_eval.rs` | — | Evaluación E2E continua del propio Hive |
 
 ## Key Features
 
@@ -95,6 +114,10 @@ See `examples/hive.json` for the complete schema including:
 |----------|--------|
 | `HIVE_PROTECT_MAIN` | `1` / `true` / `yes`: el enjambre **no** escribe ni fusiona en `main`; merges y hitos van a la rama de integración. |
 | `HIVE_INTEGRATION_BRANCH` | Nombre de esa rama (por defecto `main` si `HIVE_PROTECT_MAIN` está desactivado; si está activado y no se define, `hive/integration`). Con `HIVE_PROTECT_MAIN=1` **no** puede ser `main` ni `master` (error al arrancar). |
+| `HIVE_VALIDATE_SCAFFOLD` | Por defecto **activado**: tras crear andamiaje greenfield, exige `cargo check`, `fmt --check`, `clippy -D warnings` y `cargo test` (Rust), o `python3 -m py_compile` / `node --check` según stack. Desactivar: `0` / `false` / `no` (p. ej. entorno sin `rustfmt`). |
+| `HIVE_RUN_TESTS_BEFORE_MR` | Por defecto **activado**: si existe `Cargo.toml`, ejecuta `cargo test` antes de abrir el MR simulado al Consejo. Desactivar: `0` / `false` / `no`. |
+
+**Daemon recomendado** (ciclos continuos con repos “bien” probados): `HIVE_DAEMON=1` (o `hive_core -d`) y dejar las dos variables anteriores en default; instala toolchain completo (`rustfmt`, `clippy`).
 
 La protección de rama en GitHub/GitLab es **complementaria**: evita pushes accidentales al remoto; esta política controla el comportamiento local del orquestador.
 
@@ -166,13 +189,32 @@ Atajo que crea `workspace/test_repo` y ejecuta La Reina:
 ./scripts/run_in_docker.sh otro_nombre   # usa workspace/otro_nombre
 ```
 
-## Future Enhancements
+## Features (2026)
 
-1. **Real API Integration**: Connect to GitHub/GitLab APIs for actual PR creation
-2. **Machine Learning**: Predictive analysis for better task prioritization
-3. **Plugin System**: Extensible agent types for new languages/frameworks
-4. **Distributed Mode**: Multiple Queens coordinating across repositories
-5. **Advanced Resource Management**: GPU and network resource monitoring
+### Implementados
+1. **Sandbox Docker**: Ejecución aislada por obrera en contenedores (`HIVE_USE_SANDBOX=1`)
+2. **GitHub API**: PRs reales, lectura de issues, asignación de reviewers (`GITHUB_TOKEN`)
+3. **MCP Protocol**: Herramientas estandarizadas (shell, file, git) para agentes
+4. **DAG paralelo**: Tareas con dependencias, ejecución por niveles simultáneos
+5. **OpenTelemetry**: Traces/spans distribuidos exportados a Jaeger/Tempo (`HIVE_OTEL_ENABLED=1`)
+6. **A2A Protocol**: Comunicación entre agentes, descubrimiento de capacidades
+7. **WASM Plugins**: Especialistas cargados como módulos WebAssembly
+8. **Memoria RAG**: Contexto acumulado entre ciclos (.hive/memory.json)
+9. **SWE-bench**: Benchmark de evaluación del enjambre
+10. **Pair Programming**: WebSocket interactivo para supervisión humana en tiempo real
+11. **Multi-repo**: Orquestación sobre hive.workspace.json
+12. **CI/CD eval**: E2E tests del propio Hive con regression testing
+
+### Variables de entorno nuevas
+
+| Variable | Feature | Efecto |
+|----------|---------|--------|
+| `HIVE_USE_SANDBOX` | `multiagent` | `1`: ejecuta obreras en Docker |
+| `GITHUB_TOKEN` | `multiagent` | Token para GitHub API |
+| `HIVE_GITHUB_BASE_BRANCH` | `multiagent` | Rama base para PRs (default: `main`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `multiagent` | Endpoint OTLP (default: `localhost:4317`) |
+| `HIVE_OTEL_ENABLED` | `multiagent` | `1`: activa OpenTelemetry |
+| `HIVE_PAIR_PORT` | — | Puerto WebSocket pair programming |
 
 ## License
 

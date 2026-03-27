@@ -13,9 +13,34 @@ pub mod state;
 pub mod work;
 
 // Módulos de mejora del enjambre
+pub mod scaffold_validate;
 pub mod sequential_merger;
 
-// Módulos multi-agente (opcionales, requieren feature "multiagent")
+// --- Mejoras 2026 (siempre disponibles, sin feature) ---
+pub mod cicd_eval;
+pub mod memory; // Memoria persistente RAG
+pub mod multi_repo; // Soporte multi-repo
+pub mod swebench; // SWE-bench benchmark
+
+// --- Mejoras 2026 (requieren feature "multiagent") ---
+#[cfg(feature = "multiagent")]
+pub mod a2a; // Agent-to-Agent protocol
+#[cfg(feature = "multiagent")]
+pub mod github_api; // Integración GitHub API real
+#[cfg(feature = "multiagent")]
+pub mod mcp; // Model Context Protocol
+#[cfg(feature = "multiagent")]
+pub mod pair_programming; // WebSocket pair programming
+#[cfg(feature = "multiagent")]
+pub mod sandbox; // Sandbox Docker aislado por obrera
+#[cfg(feature = "multiagent")]
+pub mod task_dag; // DAG de tareas con paralelismo
+#[cfg(feature = "multiagent")]
+pub mod telemetry; // OpenTelemetry observabilidad
+#[cfg(feature = "multiagent")]
+pub mod wasm_plugins; // Plugins WASM
+
+// Módulos multi-agente legacy (requieren feature "multiagent")
 #[cfg(feature = "multiagent")]
 pub mod blackboard;
 #[cfg(feature = "multiagent")]
@@ -107,7 +132,11 @@ pub async fn run_queen_cycle(target: PathBuf, cfg: &HiveConfig) -> Result<()> {
             ?work_mode,
             "solicitud del engambre cargada (bootstrap si el repo está vacío / sin manifest)"
         );
-        crate::request::bootstrap_if_needed(&target, &hive_request)?;
+        let scaffolded = crate::request::bootstrap_if_needed(&target, &hive_request)?;
+        if scaffolded && cfg.validate_scaffold {
+            let stack = crate::request::stack_for_repo(&target, &hive_request);
+            crate::scaffold_validate::validate_after_bootstrap(&target, stack)?;
+        }
     } else {
         info!(
             ?work_mode,

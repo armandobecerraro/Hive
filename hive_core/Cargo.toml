@@ -9,7 +9,10 @@ fail-under-lines = 94
 
 [features]
 default = []
-multiagent = ["dep:reqwest"]
+multiagent = ["dep:reqwest", "dep:bollard", "dep:octocrab", "dep:opentelemetry",
+              "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry",
+              "dep:petgraph", "dep:tokio-tungstenite", "dep:tungstenite"]
+full = ["multiagent"]
 
 [dependencies]
 anyhow = "1.0"
@@ -24,6 +27,28 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 reqwest = { version = "0.12", features = ["json"], optional = true }
+
+# Sandbox Docker
+bollard = { version = "0.18", optional = true }
+
+# GitHub API
+octocrab = { version = "0.42", optional = true }
+
+# OpenTelemetry observabilidad
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", optional = true, features = ["rt-tokio", "trace"] }
+opentelemetry-otlp = { version = "0.27", optional = true }
+tracing-opentelemetry = { version = "0.28", optional = true }
+
+# DAG de tareas
+petgraph = { version = "0.7", optional = true }
+
+# WebSocket pair programming
+tokio-tungstenite = { version = "0.26", optional = true }
+tungstenite = { version = "0.26", optional = true }
+
+# Utilidades async
+futures-util = "0.3"
 
 [dev-dependencies]
 serial_test = "3"

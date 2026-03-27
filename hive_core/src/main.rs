@@ -110,7 +110,8 @@ Variables de entorno:
   HIVE_STACK       rust_binary | python_app | node_minimal | auto
   HIVE_SKIP_RESOURCE_GATE=1  No esperar a bajar CPU/RAM antes de incubar obreras (útil en tests / máquinas cargadas)
   HIVE_MAX_MR_REJECTION_ATTEMPTS  Tras N rechazos del Consejo se descarta la rama obrera (default 10; evita bucles infinitos). Si el Mantenedor indica que el cambio es obsoleto o ya no se requiere, no hay más reintentos.
-  HIVE_RUN_TESTS_BEFORE_MR=1  En repos con Cargo.toml ejecuta cargo test antes de enviar el MR al Consejo
+  HIVE_RUN_TESTS_BEFORE_MR  Default 1: en repos con Cargo.toml ejecuta cargo test antes del MR al Consejo. Desactivar: 0/false/no.
+  HIVE_VALIDATE_SCAFFOLD     Default 1: tras crear andamiaje greenfield, exige check/fmt/clippy/test (Rust) o py_compile / node --check. Desactivar: 0/false/no (p. ej. sin rustfmt en el PATH).
 
   (binario compilado con --features multiagent)
   OLLAMA_BASE_URL  URL del API Ollama (ej. http://127.0.0.1:11434). Sin esta variable se usa un mock.

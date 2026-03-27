@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use uuid::Uuid;
 
 pub const FILENAME: &str = "hive.request.json";
@@ -194,7 +195,7 @@ pub fn mission_brief_markdown(req: &HiveRequest) -> String {
 }
 
 fn manifest_present_for_stack(repo: &Path, req: &HiveRequest) -> bool {
-    let stack = effective_stack(repo, req);
+    let stack = stack_for_repo(repo, req);
     match stack {
         ProjectStack::RustBinary | ProjectStack::Auto => repo.join("Cargo.toml").exists(),
         ProjectStack::PythonApp => {
@@ -225,22 +226,25 @@ pub fn parse_stack(s: &str) -> Option<ProjectStack> {
 }
 
 /// Si la solicitud lo pide y el repo aún no tiene manifest, genera un proyecto mínimo ejecutable.
-pub fn bootstrap_if_needed(repo: &Path, req: &HiveRequest) -> Result<()> {
+/// Devuelve `true` si se creó o amplió el andamiaje en esta llamada.
+pub fn bootstrap_if_needed(repo: &Path, req: &HiveRequest) -> Result<bool> {
     if !req.is_actionable() {
-        return Ok(());
+        return Ok(false);
     }
-    let stack = effective_stack(repo, req);
+    let stack = stack_for_repo(repo, req);
     if !should_scaffold(repo, req, stack) {
-        return Ok(());
+        return Ok(false);
     }
     match stack {
-        ProjectStack::RustBinary | ProjectStack::Auto => scaffold_rust(repo, req),
-        ProjectStack::PythonApp => scaffold_python(repo, req),
-        ProjectStack::NodeMinimal => scaffold_node(repo, req),
+        ProjectStack::RustBinary | ProjectStack::Auto => scaffold_rust(repo, req)?,
+        ProjectStack::PythonApp => scaffold_python(repo, req)?,
+        ProjectStack::NodeMinimal => scaffold_node(repo, req)?,
     }
+    Ok(true)
 }
 
-fn effective_stack(repo: &Path, req: &HiveRequest) -> ProjectStack {
+/// Stack efectivo según `hive.request` y ficheros presentes (misma lógica que el bootstrap).
+pub fn stack_for_repo(repo: &Path, req: &HiveRequest) -> ProjectStack {
     if req.stack != ProjectStack::Auto {
         return req.stack;
     }
@@ -367,7 +371,15 @@ description = "{title_esc}"
     }
     main_rs.push_str(
         " *\n * Siguiente paso: implementar lo pedido arriba.\n */\n\
-         fn main() {\n    println!(\"{} v{}\", env!(\"CARGO_PKG_NAME\"), env!(\"CARGO_PKG_VERSION\"));\n}\n",
+fn main() {\n    println!(\"{} v{}\", env!(\"CARGO_PKG_NAME\"), env!(\"CARGO_PKG_VERSION\"));\n}\n\
+\n\
+#[cfg(test)]\n\
+mod tests {\n\
+    #[test]\n\
+    fn hive_scaffold_smoke() {\n\
+        assert!(!env!(\"CARGO_PKG_NAME\").is_empty());\n\
+    }\n\
+}\n",
     );
     if !repo.join("src").join("main.rs").exists() {
         fs::write(repo.join("src").join("main.rs"), main_rs)?;
@@ -392,7 +404,10 @@ description = "{title_esc}"
     if !repo.join(".gitignore").exists() {
         fs::write(
             repo.join(".gitignore"),
-            "/target\nCargo.lock\n.DS_Store\n.hive_worker_*.md\n",
+            "/target\n\
+# Cargo.lock se versiona en binarios para builds reproducibles (Cargo book).\n\
+.DS_Store\n\
+.hive_worker_*.md\n",
         )?;
     }
 
@@ -403,7 +418,25 @@ description = "{title_esc}"
     fs::create_dir_all(repo.join("docs"))?;
     fs::write(repo.join("docs").join("HIVE_SPEC.md"), spec)?;
 
+    run_cargo_fmt_after_rust_scaffold(repo)?;
     tracing::info!(package = %pkg, "bootstrap Rust: proyecto mínimo creado desde la solicitud");
+    Ok(())
+}
+
+/// Normaliza `src/main.rs` con rustfmt para que `cargo fmt --check` pase en validación.
+fn run_cargo_fmt_after_rust_scaffold(repo: &Path) -> Result<()> {
+    if !repo.join("Cargo.toml").exists() {
+        return Ok(());
+    }
+    let out = Command::new("cargo")
+        .current_dir(repo)
+        .args(["fmt", "--all"])
+        .output()
+        .context("cargo fmt tras bootstrap (¿cargo en PATH?)")?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        anyhow::bail!("cargo fmt tras bootstrap falló:\n{stderr}");
+    }
     Ok(())
 }
 
@@ -674,7 +707,7 @@ mod tests {
     fn bootstrap_noop_when_request_empty() {
         let t = tempdir().unwrap();
         let req = HiveRequest::default();
-        bootstrap_if_needed(t.path(), &req).unwrap();
+        assert!(!bootstrap_if_needed(t.path(), &req).unwrap());
         assert!(!t.path().join("Cargo.toml").exists());
     }
 

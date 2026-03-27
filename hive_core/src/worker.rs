@@ -33,7 +33,7 @@ impl Worker {
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
-            specialist: specialist.clone(),
+            specialist,
             blackboard,
             brain,
             target_dir,
@@ -293,7 +293,7 @@ pub async fn spawn_workers(
             .unwrap_or(Specialist::Generic);
 
         let worker = Worker::new(
-            specialist.clone(),
+            specialist,
             blackboard.clone(),
             brain.clone(),
             target_dir.clone(),
