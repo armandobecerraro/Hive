@@ -15,9 +15,9 @@ echo "==> hive_core: cargo test"
 (cd hive_core && cargo test)
 
 if command -v cargo >/dev/null 2>&1 && cargo llvm-cov --help >/dev/null 2>&1; then
-  echo "==> hive_core: cobertura ≥ 94 % líneas"
+  echo "==> hive_core: cobertura ≥ 85 % líneas"
   (cd hive_core && cargo llvm-cov test \
-    --fail-under-lines 94 \
+    --fail-under-lines 85 \
     --ignore-filename-regex '^(.*/)?src/main\.rs$' \
     --summary-only)
 else

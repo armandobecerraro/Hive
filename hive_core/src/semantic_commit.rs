@@ -125,7 +125,7 @@ impl CommitMessageGenerator {
     fn infer_scope(files: &[String]) -> Option<String> {
         if files.len() == 1 {
             let file = &files[0];
-            if let Some(name) = file.split('/').last() {
+            if let Some(name) = file.split('/').next_back() {
                 return Some(
                     name.replace(".rs", "")
                         .replace(".py", "")
@@ -146,7 +146,7 @@ impl CommitMessageGenerator {
         match commit_type {
             CommitType::Feat => format!("add functionality to {}", Self::file_summary(files)),
             CommitType::Fix => format!("resolve issue in {}", Self::file_summary(files)),
-            CommitType::Docs => format!("update documentation"),
+            CommitType::Docs => "update documentation".to_string(),
             CommitType::Test => format!("add tests for {}", Self::file_summary(files)),
             CommitType::Refactor => format!("refactor {}", Self::file_summary(files)),
             _ => format!("update {}", Self::file_summary(files)),
@@ -155,7 +155,11 @@ impl CommitMessageGenerator {
 
     fn file_summary(files: &[String]) -> String {
         if files.len() == 1 {
-            files[0].split('/').last().unwrap_or(&files[0]).to_string()
+            files[0]
+                .split('/')
+                .next_back()
+                .unwrap_or(&files[0])
+                .to_string()
         } else {
             format!("{} files", files.len())
         }

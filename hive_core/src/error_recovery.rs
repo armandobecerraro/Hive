@@ -135,7 +135,7 @@ impl ErrorParser {
 }
 
 fn extract_file_path(line: &str) -> Option<String> {
-    let parts: Vec<&str> = line.split(|c| c == ':' || c == ' ').collect();
+    let parts: Vec<&str> = line.split([':', ' ']).collect();
     for part in &parts {
         if part.contains('.') && (part.contains('/') || part.contains('\\')) {
             return Some(part.to_string());

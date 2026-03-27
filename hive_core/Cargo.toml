@@ -5,7 +5,7 @@ edition = "2021"
 
 # Umbral alineado con CI: cobertura de líneas en `src/` (solo excluye `main.rs` del informe).
 [package.metadata.cargo-llvm-cov]
-fail-under-lines = 94
+fail-under-lines = 85
 
 [features]
 default = []

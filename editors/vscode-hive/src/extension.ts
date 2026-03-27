@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
 import * as path from "path";
 import {
   buildHiveRequest,
@@ -150,23 +151,8 @@ async function executeMission(
   }
 
   const req = buildHiveRequest(desc, stack, workMode, !!payload.force_scaffold);
-  try {
-    const written = writeHiveRequestJson(root, req);
-    postToWebview(panel, {
-      type: "log",
-      payload: {
-        channel: "stdout",
-        text: `[Hive] Solicitud guardada en ${written}\n`,
-      },
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    postToWebview(panel, { type: "error", payload: { message: msg } });
-    postToWebview(panel, { type: "runEnd", payload: {} });
-    return;
-  }
 
-const config = vscode.workspace.getConfiguration("hive");
+  const config = vscode.workspace.getConfiguration("hive");
   let exe: string;
   try {
     exe = resolveExecutable(config);

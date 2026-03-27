@@ -29,6 +29,12 @@ pub struct DependencyGraph {
     adjacency: HashMap<String, HashSet<String>>,
 }
 
+impl Default for DependencyGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DependencyGraph {
     pub fn new() -> Self {
         Self {
@@ -55,17 +61,13 @@ impl DependencyGraph {
     pub fn analyze_python_imports(&mut self, file: &str, content: &str) {
         for line in content.lines() {
             let line = line.trim();
-            if line.starts_with("import ") {
-                let module = line[7..]
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
+            if let Some(rest) = line.strip_prefix("import ") {
+                let module = rest.split_whitespace().next().unwrap_or("").to_string();
                 if !module.is_empty() {
                     self.add_dependency(file, &module, DependencyType::Import);
                 }
-            } else if line.starts_with("from ") {
-                if let Some(module) = line[5..].split_whitespace().next() {
+            } else if let Some(rest) = line.strip_prefix("from ") {
+                if let Some(module) = rest.split_whitespace().next() {
                     self.add_dependency(file, module, DependencyType::Import);
                 }
             }

@@ -84,7 +84,7 @@ impl ContextWindow {
 
     /// Estima tokens (aprox 4 chars por token).
     pub fn estimate_tokens(text: &str) -> usize {
-        (text.len() + 3) / 4
+        text.len().div_ceil(4)
     }
 
     /// Chunking de un archivo en bloques inteligentes.
@@ -110,36 +110,31 @@ impl ContextWindow {
             let chunk_text = current_lines.join("\n");
             let tokens = Self::estimate_tokens(&chunk_text);
 
-            if (is_boundary && tokens > self.config.chunk_size / 2)
+            if ((is_boundary && tokens > self.config.chunk_size / 2)
                 || tokens >= self.config.chunk_size
-                || i == lines.len() - 1
+                || i == lines.len() - 1)
+                && !current_lines.is_empty()
             {
-                if !current_lines.is_empty() {
-                    let chunk_type = detect_chunk_type(&chunk_text);
-                    chunks.push(CodeChunk {
-                        file_path: path.to_string(),
-                        start_line: current_start + 1,
-                        end_line: i + 1,
-                        content: chunk_text.clone(),
-                        token_estimate: Self::estimate_tokens(&chunk_text),
-                        relevance_score: 0.0,
-                        chunk_type,
-                    });
+                let chunk_type = detect_chunk_type(&chunk_text);
+                chunks.push(CodeChunk {
+                    file_path: path.to_string(),
+                    start_line: current_start + 1,
+                    end_line: i + 1,
+                    content: chunk_text.clone(),
+                    token_estimate: Self::estimate_tokens(&chunk_text),
+                    relevance_score: 0.0,
+                    chunk_type,
+                });
 
-                    // Overlap para continuidad
-                    let overlap_lines = self.config.overlap / 80; // ~80 chars per line
-                    if overlap_lines > 0 && i + 1 < lines.len() {
-                        let overlap_start = if i >= overlap_lines {
-                            i - overlap_lines
-                        } else {
-                            0
-                        };
-                        current_start = overlap_start;
-                        current_lines = lines[overlap_start..=i].to_vec();
-                    } else {
-                        current_start = i + 1;
-                        current_lines.clear();
-                    }
+                // Overlap para continuidad
+                let overlap_lines = self.config.overlap / 80; // ~80 chars per line
+                if overlap_lines > 0 && i + 1 < lines.len() {
+                    let overlap_start = i.saturating_sub(overlap_lines);
+                    current_start = overlap_start;
+                    current_lines = lines[overlap_start..=i].to_vec();
+                } else {
+                    current_start = i + 1;
+                    current_lines.clear();
                 }
             }
         }

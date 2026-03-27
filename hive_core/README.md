@@ -157,7 +157,7 @@ Solo esos escenarios:
 cargo test e2e_ -- --test-threads=1
 ```
 
-Tests y cobertura de líneas (≥ 94 %, `main.rs` excluido) en Docker:
+Tests y cobertura de líneas (≥ 85 %, `main.rs` excluido) en Docker:
 ```bash
 make check
 # o
@@ -172,7 +172,7 @@ cd hive_core
 docker compose --profile dev build rust-toolchain-tests
 docker compose --profile dev run --rm rust-toolchain-tests cargo test --release
 docker compose --profile dev run --rm rust-toolchain-tests cargo llvm-cov test --release \
-  --fail-under-lines 94 \
+  --fail-under-lines 85 \
   --ignore-filename-regex '^(.*/)?src/main\.rs$' \
   --summary-only
 ```

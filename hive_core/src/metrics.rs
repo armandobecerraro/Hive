@@ -15,6 +15,12 @@ pub struct MetricsExporter {
     points: Vec<MetricPoint>,
 }
 
+impl Default for MetricsExporter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsExporter {
     pub fn new() -> Self {
         Self { points: Vec::new() }

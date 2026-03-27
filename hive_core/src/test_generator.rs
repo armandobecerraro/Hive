@@ -32,7 +32,7 @@ impl TestGenerator {
     pub fn generate_rust_tests(
         fn_name: &str,
         params: &[(String, String)],
-        return_type: &str,
+        _return_type: &str,
     ) -> Vec<GeneratedTest> {
         let mut tests = Vec::new();
 

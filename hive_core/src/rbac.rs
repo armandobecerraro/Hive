@@ -33,6 +33,12 @@ pub struct RbacManager {
     role_permissions: HashMap<Role, Vec<Permission>>,
 }
 
+impl Default for RbacManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RbacManager {
     pub fn new() -> Self {
         let mut role_perms = HashMap::new();

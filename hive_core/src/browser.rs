@@ -35,12 +35,12 @@ impl Default for BrowserConfig {
 
 /// Browser headless simplificado.
 pub struct HeadlessBrowser {
-    config: BrowserConfig,
+    _config: BrowserConfig,
 }
 
 impl HeadlessBrowser {
     pub fn new(config: BrowserConfig) -> Self {
-        Self { config }
+        Self { _config: config }
     }
 
     /// Obtiene el contenido de una URL (requiere feature multiagent para HTTP real).
@@ -125,6 +125,7 @@ impl HeadlessBrowser {
     }
 }
 
+#[allow(dead_code)]
 fn extract_title(html: &str) -> Option<String> {
     let start = html.find("<title>")? + 7;
     let end = html[start..].find("</title>")?;

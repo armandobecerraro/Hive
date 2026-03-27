@@ -20,19 +20,12 @@ pub struct HealthChecker;
 
 impl HealthChecker {
     pub fn run_all(repo_root: &std::path::Path) -> HealthReport {
-        let mut checks = Vec::new();
-
-        // Verificar git
-        checks.push(Self::check_git(repo_root));
-
-        // Verificar disco
-        checks.push(Self::check_disk_space(repo_root));
-
-        // Verificar Cargo.toml
-        checks.push(Self::check_cargo_toml(repo_root));
-
-        // Verificar hive.json
-        checks.push(Self::check_hive_state(repo_root));
+        let checks = vec![
+            Self::check_git(repo_root),
+            Self::check_disk_space(repo_root),
+            Self::check_cargo_toml(repo_root),
+            Self::check_hive_state(repo_root),
+        ];
 
         let healthy = checks.iter().all(|c| c.passed);
         HealthReport { healthy, checks }

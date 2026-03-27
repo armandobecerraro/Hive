@@ -14,6 +14,12 @@ pub struct ShutdownHandler {
     state: std::sync::Mutex<ShutdownState>,
 }
 
+impl Default for ShutdownHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShutdownHandler {
     pub fn new() -> Self {
         Self {

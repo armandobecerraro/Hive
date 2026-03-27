@@ -86,7 +86,7 @@ impl WebhookHandler {
     }
 
     /// Verifica la firma del webhook (HMAC).
-    pub fn verify_signature(payload: &str, signature: &str, secret: &str) -> bool {
+    pub fn verify_signature(_payload: &str, signature: &str, secret: &str) -> bool {
         if secret.is_empty() {
             return true;
         }

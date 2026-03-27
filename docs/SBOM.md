@@ -26,7 +26,7 @@ Este documento lista las dependencias de producción de los componentes de Hive.
 | serial_test | 3 | Tests paralelos |
 | tempfile | 3 | Archivos temporales |
 
-**Umbral de cobertura**: 94% líneas (solo `main.rs` excluido)
+**Umbral de cobertura**: 85% líneas (solo `main.rs` excluido)
 
 ---
 

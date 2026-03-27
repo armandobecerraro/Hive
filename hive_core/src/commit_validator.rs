@@ -47,11 +47,9 @@ impl CommitValidator {
         }
 
         let breaking = first_line.contains('!') || message.contains("BREAKING CHANGE");
-        let scope = if rest.starts_with('(') {
-            rest[1..].find(')').map(|end| rest[1..end + 1].to_string())
-        } else {
-            None
-        };
+        let scope = rest
+            .strip_prefix('(')
+            .and_then(|s| s.find(')').map(|end| s[..end].to_string()));
 
         if rest.contains(':')
             && rest

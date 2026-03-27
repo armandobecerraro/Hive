@@ -36,6 +36,12 @@ pub struct ModelRegistry {
     models: Vec<ModelConfig>,
 }
 
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelRegistry {
     pub fn new() -> Self {
         Self {
@@ -135,10 +141,12 @@ impl ModelRegistry {
                     }
                 }
                 // Verificar que la API key existe si es necesario
-                if m.provider != LLMProvider::Ollama && m.provider != LLMProvider::Local {
-                    if !m.api_key_env.is_empty() && std::env::var(&m.api_key_env).is_err() {
-                        return false;
-                    }
+                if m.provider != LLMProvider::Ollama
+                    && m.provider != LLMProvider::Local
+                    && !m.api_key_env.is_empty()
+                    && std::env::var(&m.api_key_env).is_err()
+                {
+                    return false;
                 }
                 true
             })

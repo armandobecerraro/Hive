@@ -1,7 +1,7 @@
 //! REUSE compliance checker.
 //! Verifica que todos los archivos tengan headers de licencia.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ReuseReport {

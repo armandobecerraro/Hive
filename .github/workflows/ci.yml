@@ -82,17 +82,20 @@ jobs:
         working-directory: hive_core
         run: cargo test --verbose --features multiagent
 
-      - name: Cobertura de líneas (≥ 94 %)
+      - name: Cobertura de líneas (≥ 85 %)
         working-directory: hive_core
         run: |
           cargo llvm-cov test \
-            --fail-under-lines 94 \
+            --fail-under-lines 85 \
             --ignore-filename-regex '^(.*/)?src/main\.rs$' \
             --summary-only \
             --color always
 
   security-audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2.0.0

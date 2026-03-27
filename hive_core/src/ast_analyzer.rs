@@ -55,12 +55,12 @@ impl AstAnalyzer {
             {
                 let is_public = trimmed.starts_with("pub");
                 let fn_part = if is_public {
-                    trimmed.replacen("pub fn ", "", 1)
+                    trimmed.strip_prefix("pub fn ").unwrap_or(trimmed)
                 } else {
-                    trimmed.replacen("fn ", "", 1)
+                    trimmed.strip_prefix("fn ").unwrap_or(trimmed)
                 };
                 let name = fn_part.split('(').next().unwrap_or("").trim().to_string();
-                let params = extract_params_from_sig(&fn_part);
+                let params = extract_params_from_sig(fn_part);
                 current_fn = Some((name, i + 1, is_public, params));
             }
 
@@ -86,11 +86,13 @@ impl AstAnalyzer {
             let trimmed = line.trim();
             if trimmed.starts_with("def ") || trimmed.starts_with("async def ") {
                 let def_part = trimmed
-                    .replacen("async def ", "", 1)
-                    .replacen("def ", "", 1);
+                    .strip_prefix("async def ")
+                    .unwrap_or(trimmed)
+                    .strip_prefix("def ")
+                    .unwrap_or(trimmed);
                 let name = def_part.split('(').next().unwrap_or("").trim().to_string();
                 let is_public = !name.starts_with('_');
-                let params = extract_params_from_sig(&def_part);
+                let params = extract_params_from_sig(def_part);
                 functions.push(FunctionInfo {
                     name,
                     start_line: i + 1,

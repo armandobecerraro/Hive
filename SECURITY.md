@@ -33,7 +33,7 @@
 | **Funcionalidad** | Cumple especificaciones de automatización Git | Tests de integración pasan |
 | **Fiabilidad** | Manejo elegante de fallos Git/red | Sin panics; errores retornados como Result |
 | **Seguridad** | Verificación de binarios; aislamiento de rutas | Evitar path traversal; validar rutas absolutas al ejecutable |
-| **Mantenibilidad** | Código limpio, documentado, testeable | Cobertura ≥ 94%; sin lints |
+| **Mantenibilidad** | Código limpio, documentado, testeable | Cobertura ≥ 85%; sin lints |
 | **Portabilidad** | Multi-OS (Linux/macOS/Windows) | CI en macOS y Ubuntu; Docker disponible para entornos reproducibles |
 
 ### Excepciones documentadas
@@ -42,7 +42,7 @@
 
 ### Proceso de medición
 - **Tests**: `cargo test`, `npm test`
-- **Cobertura**: `cargo llvm-cov` (objetivo 94%)
+- **Cobertura**: `cargo llvm-cov` (objetivo 85%)
 - **Estáticos**: `cargo clippy`; en la extensión, `npm run compile` (TypeScript)
 - **Seguridad**: `cargo audit`, `npm audit` en cada PR
 

@@ -39,6 +39,12 @@ pub struct CheckpointManager {
     checkpoints: Vec<Checkpoint>,
 }
 
+impl Default for CheckpointManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CheckpointManager {
     pub fn new() -> Self {
         Self {

@@ -18,6 +18,12 @@ pub struct TemplateRegistry {
     templates: Vec<Template>,
 }
 
+impl Default for TemplateRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TemplateRegistry {
     pub fn new() -> Self {
         Self {

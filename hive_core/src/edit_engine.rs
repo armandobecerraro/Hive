@@ -128,11 +128,10 @@ impl EditEngine {
         // Simplificación: para producción usaría una librería de patch apply
         let mut result = content.to_string();
         for hunk_line in diff.lines() {
-            if hunk_line.starts_with('-') {
-                let line_content = &hunk_line[1..];
+            if let Some(line_content) = hunk_line.strip_prefix('-') {
                 result = result.replacen(line_content, "", 1);
-            } else if hunk_line.starts_with('+') {
-                result.push_str(&hunk_line[1..]);
+            } else if let Some(added) = hunk_line.strip_prefix('+') {
+                result.push_str(added);
                 result.push('\n');
             }
         }

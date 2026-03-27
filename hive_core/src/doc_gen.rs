@@ -33,7 +33,7 @@ impl DocGenerator {
         }
     }
 
-    pub fn generate_docstring_rust(fn_name: &str, params: &[String], returns: &str) -> String {
+    pub fn generate_docstring_rust(_fn_name: &str, params: &[String], returns: &str) -> String {
         let param_docs: Vec<String> = params
             .iter()
             .map(|p| format!("/// - `{p}`: Parámetro"))

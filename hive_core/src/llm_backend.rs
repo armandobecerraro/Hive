@@ -132,7 +132,7 @@ pub trait LlmBackend: Send + Sync {
 
     /// Cuenta tokens estimados.
     fn estimate_tokens(&self, text: &str) -> usize {
-        (text.len() + 3) / 4
+        text.len().div_ceil(4)
     }
 
     /// Calcula costo estimado.

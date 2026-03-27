@@ -4,7 +4,7 @@
 //! Usa el crate `notify` para eventos del filesystem.
 
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Evento del filesystem.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,7 +141,7 @@ mod tests {
 
         let events = queue.drain();
         assert_eq!(events.len(), 2);
-        assert!(queue.has_events() == false);
+        assert!(!queue.has_events());
     }
 
     #[test]

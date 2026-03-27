@@ -35,6 +35,12 @@ pub struct CostTracker {
     current_cycle_id: String,
 }
 
+impl Default for CostTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CostTracker {
     pub fn new() -> Self {
         Self {
@@ -44,6 +50,7 @@ impl CostTracker {
     }
 
     /// Registra uso de LLM.
+    #[allow(clippy::too_many_arguments)]
     pub fn record(
         &mut self,
         model: &str,

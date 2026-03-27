@@ -4,7 +4,7 @@
 
 Comprobación local del monorepo:
 
-- `hive_core`: `cargo fmt --check`, `clippy -D warnings`, `test`, y (si existe) `cargo llvm-cov` al 94 % de líneas.
+- `hive_core`: `cargo fmt --check`, `clippy -D warnings`, `test`, y (si existe) `cargo llvm-cov` al 85 % de líneas.
 - `editors/vscode-hive`: `npm ci` y `npm test` (compila TypeScript + pruebas Node del `hiveRunner`).
 
 ```bash

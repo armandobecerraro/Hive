@@ -56,7 +56,7 @@ pub struct Planner;
 
 impl Planner {
     /// Genera un plan a partir de una descripción de tarea.
-    pub fn generate_plan(goal: &str, context: &str) -> ExecutionPlan {
+    pub fn generate_plan(goal: &str, _context: &str) -> ExecutionPlan {
         let mut steps = Vec::new();
         let mut id = 1;
 
