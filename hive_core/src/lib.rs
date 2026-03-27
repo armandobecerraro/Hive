@@ -48,6 +48,84 @@ pub mod brain;
 #[cfg(feature = "multiagent")]
 pub mod worker;
 
+// --- Módulos P0 Críticos (siempre disponibles) ---
+pub mod context_window; // Gestión de ventana de contexto
+pub mod conversation; // Historial de conversación
+pub mod edit_engine; // Edición basada en diffs
+pub mod embeddings; // Vector store RAG
+pub mod multi_model; // Soporte multi-modelo LLM
+pub mod planner; // Planificación explícita
+pub mod streaming; // Real-time streaming de LLM
+pub mod validator; // Validación de resultados
+
+// --- Módulos P1 Alto impacto (siempre disponibles) ---
+pub mod browser; // Browser automation
+pub mod checkpoints; // Human-in-the-loop checkpoints
+pub mod cost_tracker; // Cost tracking de LLM
+pub mod error_recovery; // Error recovery avanzado
+pub mod fs_watcher; // File system watcher
+pub mod retry; // Retry con cambio de estrategia
+pub mod terminal; // Terminal interactivo
+pub mod test_generator;
+pub mod undo; // Undo/rollback granular // Generación automática de tests
+
+// --- Módulos P2 Diferenciadores (siempre disponibles) ---
+pub mod ast_analyzer; // AST-based code understanding
+pub mod changelog;
+pub mod code_review; // Code review automático
+pub mod deps_analysis; // Análisis de dependencias
+pub mod semantic_commit; // Generación semántica de commits // Generación de changelog
+
+// --- Módulos P3 Infraestructura (siempre disponibles) ---
+pub mod api_spec;
+pub mod config_validator; // Validación estricta de config
+pub mod health; // Health checks
+pub mod llm_cache; // Caching de respuestas LLM
+pub mod metrics; // Exportación de métricas
+pub mod rate_limiter; // Rate limiting para LLM
+pub mod shutdown; // Graceful shutdown // REST API spec
+
+// --- Módulos P4 Seguridad (siempre disponibles) ---
+pub mod audit_log; // Audit logging
+pub mod conflict_resolver;
+pub mod secrets; // Secret management seguro
+pub mod supply_chain; // Supply chain security // Resolución de conflictos
+
+// --- Módulos P5 UX (siempre disponibles) ---
+pub mod doc_gen; // Generación de documentación
+pub mod profiler; // Performance profiling
+
+// --- Módulos P6 Testing (siempre disponibles) ---
+pub mod fuzzer;
+pub mod mutation_test; // Mutation testing // Fuzzing
+
+// --- Módulos P7 Estándares (siempre disponibles) ---
+pub mod adr; // Architecture Decision Records
+pub mod commit_validator; // Validación de conventional commits
+pub mod reuse; // REUSE compliance checker
+
+// --- Módulos UX/Ecosistema (siempre disponibles) ---
+pub mod dashboard; // Web dashboard spec y datos
+pub mod hot_reload; // Hot reload de configuración
+pub mod marketplace; // Plugin marketplace
+pub mod notifications; // Slack/Discord notificaciones
+pub mod observability;
+pub mod rbac; // Role-Based Access Control
+pub mod snapshots; // Snapshot testing
+pub mod templates; // Templates/presets por stack
+pub mod tui; // Terminal UI con paneles y progreso
+pub mod webhooks; // Webhook server GitHub/GitLab // Observabilidad completa
+
+// --- Módulos Sandbox/Security (siempre disponibles) ---
+pub mod image_scanner; // Container image scanning
+pub mod network_policy; // Network policies para sandbox
+
+// --- Módulos de producto internacional (siempre disponibles) ---
+pub mod llm_backend; // Backend de modelo robusto
+pub mod pipeline; // Pipeline end-to-end unificado
+pub mod product; // CLI/TUI producto mínimo
+pub mod threat_model; // Modelo de amenazas y seguridad
+
 use anyhow::Result;
 use config::HiveConfig;
 use discovery::RepositoryAnalyzer;
