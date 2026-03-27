@@ -98,6 +98,43 @@ jobs:
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: hive_core
+
+  # SBOM CycloneDX (NTIA / cadena de suministro); artefactos descargables desde la ejecución del workflow.
+  sbom:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SYFT_VERSION: v1.18.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
+          syft version
+
+      - name: Generar SBOM (CycloneDX JSON)
+        run: |
+          mkdir -p sbom
+          # Excluir artefactos de build: en PRs con cache, hive_core/target puede ser muy grande.
+          syft scan hive_core \
+            -o cyclonedx-json=sbom/sbom-hive-core.cdx.json \
+            --exclude '**/target/**'
+          syft scan editors/vscode-hive \
+            -o cyclonedx-json=sbom/sbom-vscode-hive.cdx.json \
+            --exclude '**/node_modules/**' \
+            --exclude '**/out/**'
+
+      - name: Subir artefactos SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: |
+            sbom/sbom-hive-core.cdx.json
+            sbom/sbom-vscode-hive.cdx.json
+          if-no-files-found: error
 
   vscode-extension:
     runs-on: ubuntu-latest
