@@ -31,9 +31,27 @@ function getWorkspaceRoot(): string | undefined {
 function resolveExecutable(config: vscode.WorkspaceConfiguration): string {
   const custom = config.get<string>("executablePath")?.trim();
   if (custom) {
+    if (!path.isAbsolute(custom)) {
+      throw new Error("hive.executablePath debe ser una ruta absoluta");
+    }
+    if (!fs.existsSync(custom)) {
+      throw new Error(`El ejecutable no existe: ${custom}`);
+    }
     return custom;
   }
   return "hive_core";
+}
+
+function sanitizeRepoRoot(root: string): string {
+  const resolved = path.resolve(root);
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`El directorio no existe: ${resolved}`);
+  }
+  const stat = fs.statSync(resolved);
+  if (!stat.isDirectory()) {
+    throw new Error(`La ruta no es un directorio: ${resolved}`);
+  }
+  return resolved;
 }
 
 async function openMissionPanel(context: vscode.ExtensionContext) {
@@ -122,6 +140,15 @@ async function executeMission(
   const stack = normalizeStack(payload.stack);
   const workMode = normalizeWorkMode(payload.work_mode);
 
+  let safeRoot: string;
+  try {
+    safeRoot = sanitizeRepoRoot(root);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    postToWebview(panel, { type: "error", payload: { message: msg } });
+    return;
+  }
+
   const req = buildHiveRequest(desc, stack, workMode, !!payload.force_scaffold);
   try {
     const written = writeHiveRequestJson(root, req);
@@ -139,10 +166,34 @@ async function executeMission(
     return;
   }
 
-  const config = vscode.workspace.getConfiguration("hive");
-  const exe = resolveExecutable(config);
+const config = vscode.workspace.getConfiguration("hive");
+  let exe: string;
   try {
-    await runHiveProcess(panel, root, exe);
+    exe = resolveExecutable(config);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    postToWebview(panel, { type: "error", payload: { message: msg } });
+    postToWebview(panel, { type: "runEnd", payload: {} });
+    return;
+  }
+  try {
+    const written = writeHiveRequestJson(safeRoot, req);
+    postToWebview(panel, {
+      type: "log",
+      payload: {
+        channel: "stdout",
+        text: `[Hive] Solicitud guardada en ${written}\n`,
+      },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    postToWebview(panel, { type: "error", payload: { message: msg } });
+    postToWebview(panel, { type: "runEnd", payload: {} });
+    return;
+  }
+
+  try {
+    await runHiveProcess(panel, safeRoot, exe);
   } finally {
     postToWebview(panel, { type: "runEnd", payload: {} });
   }
@@ -182,10 +233,26 @@ async function runCycleFromCommand() {
     return;
   }
 
-  const config = vscode.workspace.getConfiguration("hive");
-  const exe = resolveExecutable(config);
+  let safeRoot: string;
+  try {
+    safeRoot = sanitizeRepoRoot(root);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    void vscode.window.showErrorMessage(`Seguridad: ${msg}`);
+    return;
+  }
 
-  const reqPath = path.join(root, "hive.request.json");
+  const config = vscode.workspace.getConfiguration("hive");
+  let exe: string;
+  try {
+    exe = resolveExecutable(config);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    void vscode.window.showErrorMessage(`Seguridad: ${msg}`);
+    return;
+  }
+
+  const reqPath = path.join(safeRoot, "hive.request.json");
   try {
     await vscode.workspace.fs.stat(vscode.Uri.file(reqPath));
   } catch {
@@ -197,10 +264,10 @@ async function runCycleFromCommand() {
 
   const channel = vscode.window.createOutputChannel("Hive");
   channel.show(true);
-  channel.appendLine(`> ${exe} --once ${root}`);
+  channel.appendLine(`> ${exe} --once ${safeRoot}`);
 
   try {
-    const code = await runHiveOnce(root, exe, (c: LogChunk) => {
+    const code = await runHiveOnce(safeRoot, exe, (c: LogChunk) => {
       channel.append(c.text);
     });
     channel.appendLine(`\n[código de salida: ${code}]`);

@@ -1,0 +1,8 @@
+{
+  "extension.description": "Panel de misión y ciclo La Reina (hive_core). Compatible con VS Code, Cursor, Windsurf y cualquier IDE que use el Extension Host estándar.",
+  "command.openChat": "Hive: Abrir panel de misión",
+  "command.runCycle": "Hive: Ejecutar ciclo (hive.request.json actual)",
+  "config.executablePath": "Ruta absoluta al binario hive_core. Vacío = buscar \"hive_core\" en PATH.",
+  "config.showTerminal": "Si es true, también muestra la salida en la terminal integrada.",
+  "config.title": "Hive"
+}

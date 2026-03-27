@@ -1,7 +1,7 @@
 {
   "name": "hive-vscode",
   "displayName": "Hive — La Colmena",
-  "description": "Panel de misión y ciclo La Reina (hive_core). Compatible con VS Code, Cursor, Windsurf y cualquier IDE que use el Extension Host estándar.",
+  "description": "%extension.description%",
   "version": "0.1.0",
   "publisher": "hive",
   "license": "MIT",
@@ -40,28 +40,28 @@
     "commands": [
       {
         "command": "hive.openChat",
-        "title": "Hive: Abrir panel de misión",
+        "title": "%command.openChat%",
         "category": "Hive",
         "icon": "$(hubot)"
       },
       {
         "command": "hive.runCycle",
-        "title": "Hive: Ejecutar ciclo (hive.request.json actual)",
+        "title": "%command.runCycle%",
         "category": "Hive"
       }
     ],
     "configuration": {
-      "title": "Hive",
+      "title": "%config.title%",
       "properties": {
         "hive.executablePath": {
           "type": "string",
           "default": "",
-          "description": "Ruta absoluta al binario hive_core. Vacío = buscar \"hive_core\" en PATH."
+          "description": "%config.executablePath%"
         },
         "hive.showTerminalOnRun": {
           "type": "boolean",
           "default": false,
-          "description": "Si es true, también muestra la salida en la terminal integrada."
+          "description": "%config.showTerminal%"
         }
       }
     },

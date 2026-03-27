@@ -1,0 +1,8 @@
+{
+  "extension.description": "Mission panel and Queen cycle (hive_core). Compatible with VS Code, Cursor, Windsurf and any IDE using the standard Extension Host.",
+  "command.openChat": "Hive: Open mission panel",
+  "command.runCycle": "Hive: Run cycle (current hive.request.json)",
+  "config.executablePath": "Absolute path to hive_core binary. Empty = search \"hive_core\" in PATH.",
+  "config.showTerminal": "If true, also shows output in the integrated terminal.",
+  "config.title": "Hive"
+}
