@@ -48,8 +48,8 @@ impl HeadlessBrowser {
         #[cfg(feature = "multiagent")]
         {
             let client = match reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(self.config.timeout_secs))
-                .user_agent(&self.config.user_agent)
+                .timeout(std::time::Duration::from_secs(self._config.timeout_secs))
+                .user_agent(&self._config.user_agent)
                 .build()
             {
                 Ok(c) => c,

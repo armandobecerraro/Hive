@@ -87,7 +87,7 @@ fn is_safe_path(workspace: &str, user_path: &str) -> Result<std::path::PathBuf, 
 #[cfg(feature = "multiagent")]
 fn is_command_allowed(cmd: &str) -> bool {
     let program = cmd.split_whitespace().next().unwrap_or("");
-    ALLOWED_COMMANDS.iter().any(|&allowed| program == allowed)
+    ALLOWED_COMMANDS.contains(&program)
 }
 
 /// Servidor MCP local que expone herramientas del repo.

@@ -139,9 +139,8 @@ impl ResourceMonitor {
         {
             let mut sys = System::new_all();
             sys.refresh_cpu_all();
-            // sysinfo global_cpu() returns 0-100 directly in 0.32+
-            let cpu_usage = sys.global_cpu_info().cpu_usage();
-            Ok(cpu_usage)
+            // sysinfo 0.38+: uso global de CPU 0–100
+            Ok(sys.global_cpu_usage())
         }
     }
 

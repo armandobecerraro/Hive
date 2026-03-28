@@ -205,7 +205,7 @@ pub fn system_allows_new_instance(policy: &ResourcePolicy) -> bool {
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
     let mut sys = System::new_with_specifics(
-        RefreshKind::new()
+        RefreshKind::nothing()
             .with_cpu(CpuRefreshKind::everything())
             .with_memory(MemoryRefreshKind::everything()),
     );

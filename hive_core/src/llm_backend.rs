@@ -234,7 +234,7 @@ impl HttpBackend {
             model: model.into(),
             api_base: api_base.into(),
             api_key: api_key.into(),
-            max_context: max_context,
+            max_context,
             cost_per_1k_input: cost_in,
             cost_per_1k_output: cost_out,
         }
@@ -291,7 +291,7 @@ impl LlmBackend for HttpBackend {
             .json(&body)
             .timeout(std::time::Duration::from_secs(request.timeout_secs))
             .send()
-            .map_err(|e| LlmError {
+            .map_err(|e: reqwest::Error| LlmError {
                 error_type: if e.is_timeout() {
                     LlmErrorType::Timeout
                 } else {
@@ -309,7 +309,7 @@ impl LlmBackend for HttpBackend {
                 .headers()
                 .get("retry-after")
                 .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.parse().ok());
+                .and_then(|v| v.parse::<u64>().ok());
             return Err(LlmError {
                 error_type: LlmErrorType::RateLimited,
                 message: "Rate limited".into(),
@@ -342,7 +342,7 @@ impl LlmBackend for HttpBackend {
             });
         }
 
-        let json: serde_json::Value = resp.json().map_err(|e| LlmError {
+        let json: serde_json::Value = resp.json().map_err(|e: reqwest::Error| LlmError {
             error_type: LlmErrorType::ServerError,
             message: e.to_string(),
             provider: self.provider.clone(),
