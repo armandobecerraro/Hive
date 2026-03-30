@@ -16,7 +16,7 @@ pub struct HiveConfig {
     pub maintainer_reject_before_approve: u32,
     /// Tras tantos rechazos del Consejo sobre la misma obrera, se **descarta** el trabajo (borra rama, vuelve a la línea de integración) y la cola **sigue** con otras tareas (evita bucles infinitos).
     pub max_mr_rejection_attempts: u32,
-    /// Si es true, antes de enviar el MR al Consejo ejecuta `cargo test` en repos con `Cargo.toml` (fallo → no se abre MR y se reintenta como rechazo lógico vía error en la obrera). Default: true; desactivar con `HIVE_RUN_TESTS_BEFORE_MR=0`.
+    /// Si es true, antes de enviar el MR ejecuta tests: `cargo test` si hay `Cargo.toml`, o `flutter pub get` + `flutter analyze` + `flutter test` (o `dart pub get` / `dart analyze` / `dart test` en paquetes Dart sin SDK Flutter). Fallo → no se abre MR. Default: true; desactivar con `HIVE_RUN_TESTS_BEFORE_MR=0`.
     pub run_tests_before_mr: bool,
     /// Tras crear el andamiaje greenfield, ejecuta comprobaciones de calidad (`cargo check`/`fmt`/`clippy`/`test`, etc.). Default: true; desactivar con `HIVE_VALIDATE_SCAFFOLD=0` si no hay toolchain en el entorno.
     pub validate_scaffold: bool,

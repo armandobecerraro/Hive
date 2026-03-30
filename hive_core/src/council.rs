@@ -93,44 +93,6 @@ impl Default for Maintainer {
     }
 }
 
-/// Ejecuta tests del repo y devuelve si pasaron
-fn run_tests(repo_root: &Path) -> bool {
-    if !repo_root.join("Cargo.toml").exists() {
-        return true; // No es un proyecto Rust, no hay tests que ejecutar
-    }
-
-    let output = std::process::Command::new("cargo")
-        .current_dir(repo_root)
-        .args(["test", "--quiet", "--no-fail-fast"])
-        .output();
-
-    match output {
-        Ok(out) => out.status.success(),
-        Err(_) => true, // Si no se puede ejecutar, asumimos OK
-    }
-}
-
-/// Ejecuta clippy y cuenta warnings
-fn count_warnings(repo_root: &Path) -> u32 {
-    if !repo_root.join("Cargo.toml").exists() {
-        return 0;
-    }
-
-    let output = std::process::Command::new("cargo")
-        .current_dir(repo_root)
-        .args(["clippy", "--quiet", "--", "-W", "clippy::all"])
-        .stderr(std::process::Stdio::piped())
-        .output();
-
-    match output {
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            stderr.lines().filter(|l| l.contains("warning[")).count() as u32
-        }
-        Err(_) => 0,
-    }
-}
-
 /// Sanitiza un nombre de rama para uso seguro en comandos Git.
 /// Solo permite alfanuméricos, guiones, guiones bajos, barras y puntos.
 fn sanitize_branch_name(branch: &str) -> String {
@@ -229,8 +191,8 @@ impl Maintainer {
         }
 
         // Recopilar métricas reales
-        let tests_passed = run_tests(repo_root);
-        let warnings_count = count_warnings(repo_root);
+        let tests_passed = crate::repo_checks::council_tests_passed(repo_root);
+        let warnings_count = crate::repo_checks::council_warning_count(repo_root);
         let (files_changed, lines_added, lines_removed) =
             get_branch_diff_stats(repo_root, &mr.branch);
         let quality_score = calculate_quality_score(tests_passed, warnings_count, files_changed);

@@ -1,1 +1,0 @@
-// Este archivo no debería existir, ya que se está utilizando Flutter para desarrollar la aplicación móvil.

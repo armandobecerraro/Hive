@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::time::{sleep, Duration};
 
 #[cfg(feature = "multiagent")]
@@ -79,8 +79,7 @@ impl WorkerAgent {
         let spec = match self.task.specialist.language_key.as_str() {
             "rust" => Specialist::Rust,
             "python" => Specialist::Python,
-            "javascript" => Specialist::JavaScript,
-            "typescript" => Specialist::TypeScript,
+            "javascript" | "typescript" | "js_ts" => Specialist::JavaScript,
             "test" | "test_engineer" => Specialist::Test,
             "docs" => Specialist::Docs,
             _ => Specialist::Generic,
@@ -274,10 +273,10 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
         let specialist_type = match self.task.specialist.language_key.as_str() {
             "rust" => Specialist::Rust,
             "python" => Specialist::Python,
-            "javascript" => Specialist::JavaScript,
-            "typescript" => Specialist::TypeScript,
+            "javascript" | "typescript" | "js_ts" => Specialist::JavaScript,
             "test" | "test_engineer" => Specialist::Test,
             "docs" => Specialist::Docs,
+            "dart" => Specialist::Generic,
             _ => Specialist::Generic,
         };
 
@@ -307,6 +306,18 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
             return Ok(false);
         }
 
+        let idle_improve = matches!(self.task.work_mode, HiveWorkMode::Improve)
+            && self.task.mission_one_liner.trim().is_empty();
+        if idle_improve && !Self::llm_changes_meaningful_for_idle_improve(&self.target_dir, &changes)
+        {
+            tracing::info!(
+                worker = %self.task.id,
+                specialist = %self.task.specialist.language_key,
+                "Brain en mejora sin pedido: cambios descartados (solo docs/heurística; use hive.request para tocar lib/ o código)"
+            );
+            return Ok(false);
+        }
+
         for c in &changes {
             Self::apply_llm_file_change(&self.target_dir, c)?;
         }
@@ -317,6 +328,34 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
             "cambios del LLM aplicados en el repositorio"
         );
         Ok(true)
+    }
+
+    /// En mejora sin `hive.request`, solo aceptamos diffs que toquen código de producto o manifiestos.
+    #[cfg(feature = "multiagent")]
+    fn llm_changes_meaningful_for_idle_improve(
+        repo_root: &Path,
+        changes: &[FileChange],
+    ) -> bool {
+        let flutter = repo_root.join("pubspec.yaml").exists();
+        let rust = repo_root.join("Cargo.toml").exists();
+        changes.iter().any(|c| {
+            let s = c.path.to_string_lossy();
+            if flutter {
+                return s.starts_with("lib/")
+                    || s.starts_with("test/")
+                    || s.starts_with("integration_test/")
+                    || s == "pubspec.yaml"
+                    || s == "analysis_options.yaml";
+            }
+            if rust {
+                return (s.starts_with("src/") || s.starts_with("tests/") || s == "Cargo.toml")
+                    && !s.contains("hive_evolution");
+            }
+            s.starts_with("lib/")
+                || s.starts_with("src/")
+                || s.starts_with("test/")
+                || s == "package.json"
+        })
     }
 
     #[cfg(feature = "multiagent")]
@@ -330,8 +369,27 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
                     PathBuf::from("src/lib.rs")
                 }
             }
+            "dart" => {
+                let lib_main = self.target_dir.join("lib/main.dart");
+                if lib_main.exists() {
+                    PathBuf::from("lib/main.dart")
+                } else {
+                    PathBuf::from("lib/hive_llm_target.dart")
+                }
+            }
             "python" => PathBuf::from("main.py"),
             "javascript" | "typescript" => PathBuf::from("src/index.js"),
+            "js_ts" => {
+                if self.target_dir.join("pubspec.yaml").exists() {
+                    if self.target_dir.join("lib/main.dart").exists() {
+                        PathBuf::from("lib/main.dart")
+                    } else {
+                        PathBuf::from("lib/hive_llm_target.dart")
+                    }
+                } else {
+                    PathBuf::from("src/index.js")
+                }
+            }
             _ => PathBuf::from("README.md"),
         }
     }
@@ -408,10 +466,12 @@ pub fn {}() -> Result<(), Box<dyn std::error::Error>> {{
         match self.task.specialist.language_key.as_str() {
             "rust" if improve => self.analyze_rust_improve().await?,
             "rust" => self.analyze_rust().await?,
+            "dart" if improve => self.analyze_dart_improve().await?,
+            "dart" => self.generic_analysis().await?,
             "python" if improve => self.analyze_python_improve().await?,
             "python" => self.analyze_python().await?,
-            "javascript" | "typescript" if improve => self.analyze_javascript_improve().await?,
-            "javascript" | "typescript" => self.analyze_javascript().await?,
+            "javascript" | "typescript" | "js_ts" if improve => self.analyze_javascript_improve().await?,
+            "javascript" | "typescript" | "js_ts" => self.analyze_javascript().await?,
             "framework_specialist" if improve => self.improve_notes_framework().await?,
             "framework_specialist" => self.optimize_framework().await?,
             "debt_specialist" if improve => self.improve_notes_debt().await?,
@@ -666,7 +726,38 @@ Prioriza según impacto y riesgo; no sustituyen a revisión humana.\n\n";
              - Lint (`eslint`) y formato (`prettier`) unificados en el repo.\n\
              - TypeScript: `strict: true` donde sea viable.\n\
              - Tests (jest/vitest) en lógica de negocio.\n";
-        self.append_hive_improvements("javascript", body)?;
+        let key = if self.task.specialist.language_key == "js_ts" {
+            "js_ts"
+        } else {
+            "javascript"
+        };
+        self.append_hive_improvements(key, body)?;
+        Ok(())
+    }
+
+    async fn analyze_dart_improve(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        tracing::info!("Dart/Flutter — revisión y mejora");
+        sleep(agent_work_pause()).await;
+        let checklist = self.target_dir.join("docs/HIVE_FLUTTER_NEXT_STEPS.md");
+        if !checklist.exists() {
+            if let Some(parent) = checklist.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let body = "# Siguientes pasos (Hive)\n\n\
+                 Comandos recomendados en la raíz del proyecto:\n\n\
+                 ```bash\n\
+                 flutter pub get\n\
+                 flutter analyze\n\
+                 flutter test\n\
+                 ```\n\n\
+                 Prioriza cambios en `lib/` y `test/`; revisa `pubspec.yaml` y dependencias.\n";
+            fs::write(&checklist, body)?;
+            tracing::info!(path = %checklist.display(), "creada guía mínima Flutter");
+        }
+        let body = "- `dart format .` y `flutter analyze` / `dart analyze`.\n\
+             - `flutter test` en CI o local antes de integrar.\n\
+             - Revisar null-safety y widgets con estado en `lib/`.\n";
+        self.append_hive_improvements("dart", body)?;
         Ok(())
     }
 

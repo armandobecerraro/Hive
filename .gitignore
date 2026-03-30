@@ -13,6 +13,10 @@ hive_core/.env
 .idea/
 *.swp
 
+# Sandboxes locales: repos que genera La Reina (Flutter, Rust, etc.). No son el código fuente de Hive.
+hive_core/workspace/*
+!hive_core/workspace/README.md
+
 # Extensión VS Code (Hive)
 editors/vscode-hive/node_modules/
 editors/vscode-hive/out/

@@ -8,6 +8,8 @@ pub mod discovery;
 pub mod git_manager;
 pub mod orchestrator;
 pub mod request;
+pub mod repo_checks;
+pub mod session_report;
 pub mod resource_monitor;
 pub mod state;
 pub mod work;
@@ -133,6 +135,18 @@ use orchestrator::HiveOrchestrator;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
+/// Carga `.env` del directorio de trabajo y, si existe, `hive_core/.env` (vía `CARGO_MANIFEST_DIR`).
+/// No sobrescribe variables ya definidas en el proceso (p. ej. exportadas en el shell).
+pub fn load_dotenv_files() {
+    let _ = dotenvy::dotenv();
+    if let Ok(m) = std::env::var("CARGO_MANIFEST_DIR") {
+        let p = PathBuf::from(m).join(".env");
+        if p.is_file() {
+            let _ = dotenvy::from_path(&p);
+        }
+    }
+}
+
 /// Borra en la **raíz** del repo los `.hive_worker_<uuid>.md` (formato antiguo; el actual es `.hive/worker_artifact.md`).
 /// Devuelve cuántos ficheros se eliminaron del disco.
 pub(crate) fn purge_dot_hive_worker_artifacts(repo_root: &Path) -> u32 {
@@ -193,6 +207,7 @@ fn cleanup_legacy_hive_worker_md(repo_root: &Path) {
 
 /// Un ciclo completo: análisis ADN, Consejo, cola de obreras (todas las tareas por especialista).
 pub async fn run_queen_cycle(target: PathBuf, cfg: &HiveConfig) -> Result<()> {
+    load_dotenv_files();
     cfg.validate()?;
     cleanup_legacy_hive_worker_md(&target);
 
@@ -239,6 +254,11 @@ pub async fn run_queen_cycle(target: PathBuf, cfg: &HiveConfig) -> Result<()> {
     let mut orchestrator = HiveOrchestrator::new(target, profile);
     orchestrator.start(cfg, &hive_request, work_mode).await?;
 
+    if let Err(e) = crate::session_report::write_session_handoff(&repo_path, &cfg.integration_branch)
+    {
+        tracing::warn!(error = %e, "no se pudo escribir HIVE_SESSION.md (el ciclo sigue siendo válido)");
+    }
+
     if client_feedback_src == crate::request::ClientFeedbackSource::File {
         crate::request::archive_client_feedback_file(&repo_path)?;
         info!(
@@ -252,6 +272,7 @@ pub async fn run_queen_cycle(target: PathBuf, cfg: &HiveConfig) -> Result<()> {
 
 /// Compatibilidad: un ciclo con configuración desde entorno (`HiveConfig::from_env()`).
 pub async fn run_queen_cli(target: PathBuf) -> Result<()> {
+    load_dotenv_files();
     let cfg = HiveConfig::from_env();
     run_queen_cycle(target, &cfg).await
 }

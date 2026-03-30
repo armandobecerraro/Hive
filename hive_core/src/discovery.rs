@@ -579,6 +579,71 @@ pub fn deduce_specialists(dna: &RepoDna) -> Vec<SpecialistProfile> {
     profiles
 }
 
+/// En modo **mejora** sin `hive.request` accionable, reduce obreras a especialistas “de producto”
+/// (`dart`, `rust`, …) y excluye perfiles `ext_html`, `ext_png`, etc. que solo duplican notas genéricas.
+pub fn focus_specialists_for_improve_idle_repo(
+    profile: &RepositoryProfile,
+    specialists: Vec<SpecialistProfile>,
+) -> Vec<SpecialistProfile> {
+    let named: Vec<SpecialistProfile> = specialists
+        .iter()
+        .filter(|p| !p.language_key.starts_with("ext_"))
+        .cloned()
+        .collect();
+
+    let has_pubspec = profile.frameworks.iter().any(|f| f == "pubspec.yaml");
+    let has_cargo = profile.frameworks.iter().any(|f| f == "Cargo.toml");
+    let has_pkg = profile.frameworks.iter().any(|f| f == "package.json");
+
+    let mut picked: Vec<SpecialistProfile> = if has_pubspec {
+        named
+            .into_iter()
+            .filter(|p| {
+                matches!(
+                    p.language_key.as_str(),
+                    "dart" | "js_ts" | "python" | "c_family"
+                )
+            })
+            .collect()
+    } else if has_cargo {
+        named
+            .into_iter()
+            .filter(|p| {
+                matches!(
+                    p.language_key.as_str(),
+                    "rust" | "python" | "js_ts" | "c_family"
+                )
+            })
+            .collect()
+    } else if has_pkg {
+        named
+            .into_iter()
+            .filter(|p| matches!(p.language_key.as_str(), "js_ts" | "python"))
+            .collect()
+    } else {
+        named
+    };
+
+    if picked.is_empty() {
+        let mut rest = specialists;
+        rest.sort_by(|a, b| {
+            b.weight
+                .partial_cmp(&a.weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        rest.truncate(3);
+        return rest;
+    }
+
+    picked.sort_by(|a, b| {
+        b.weight
+            .partial_cmp(&a.weight)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    picked.truncate(3);
+    picked
+}
+
 fn is_dir_empty_for_hive(path: &Path) -> Result<bool> {
     if !path.exists() {
         fs::create_dir_all(path).with_context(|| format!("crear {}", path.display()))?;
@@ -886,6 +951,28 @@ mod tests {
         assert!(deduce_specialists(&dna)
             .iter()
             .any(|p| p.language_key == "dart"));
+    }
+
+    #[test]
+    fn focus_improve_idle_flutter_prefiere_dart_sin_ext_html() {
+        let profile = RepositoryProfile {
+            frameworks: vec!["pubspec.yaml".into()],
+            ..Default::default()
+        };
+        let mk = |key: &str, w: f32| SpecialistProfile {
+            language_key: key.to_string(),
+            prompt_blueprint: String::new(),
+            suggested_tools: vec![],
+            weight: w,
+        };
+        let specs = vec![
+            mk("dart", 10.0),
+            mk("ext_html", 50.0),
+            mk("ext_png", 40.0),
+        ];
+        let f = focus_specialists_for_improve_idle_repo(&profile, specs);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].language_key, "dart");
     }
 
     #[test]

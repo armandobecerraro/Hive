@@ -59,6 +59,9 @@ pub enum ProjectStack {
     RustBinary,
     PythonApp,
     NodeMinimal,
+    /// Flutter / Dart (`pubspec.yaml`, `lib/`).
+    #[serde(alias = "flutter", alias = "dart")]
+    FlutterApp,
 }
 
 impl HiveRequest {
@@ -84,6 +87,9 @@ impl HiveRequest {
         Ok(HiveRequest::default())
     }
 
+    /// No marcar `#[inline]`: el optimizador podría fusionar comprobaciones y anular el filtro
+    /// de especialistas en modo mejora sin `hive.request` (ver `orchestrator::start`).
+    #[inline(never)]
     pub fn is_actionable(&self) -> bool {
         !self.title.trim().is_empty() || !self.description.trim().is_empty()
     }
@@ -202,6 +208,7 @@ fn manifest_present_for_stack(repo: &Path, req: &HiveRequest) -> bool {
             repo.join("pyproject.toml").exists() || repo.join("requirements.txt").exists()
         }
         ProjectStack::NodeMinimal => repo.join("package.json").exists(),
+        ProjectStack::FlutterApp => repo.join("pubspec.yaml").exists(),
     }
 }
 
@@ -221,6 +228,7 @@ pub fn parse_stack(s: &str) -> Option<ProjectStack> {
         "rust" | "rust_binary" => Some(ProjectStack::RustBinary),
         "python" | "python_app" => Some(ProjectStack::PythonApp),
         "node" | "node_minimal" | "javascript" => Some(ProjectStack::NodeMinimal),
+        "flutter" | "flutter_app" | "dart" => Some(ProjectStack::FlutterApp),
         _ => None,
     }
 }
@@ -239,6 +247,7 @@ pub fn bootstrap_if_needed(repo: &Path, req: &HiveRequest) -> Result<bool> {
         ProjectStack::RustBinary | ProjectStack::Auto => scaffold_rust(repo, req)?,
         ProjectStack::PythonApp => scaffold_python(repo, req)?,
         ProjectStack::NodeMinimal => scaffold_node(repo, req)?,
+        ProjectStack::FlutterApp => scaffold_flutter(repo, req)?,
     }
     Ok(true)
 }
@@ -262,6 +271,9 @@ pub fn stack_for_repo(repo: &Path, req: &HiveRequest) -> ProjectStack {
     if repo.join("package.json").exists() {
         return ProjectStack::NodeMinimal;
     }
+    if repo.join("pubspec.yaml").exists() {
+        return ProjectStack::FlutterApp;
+    }
     ProjectStack::RustBinary
 }
 
@@ -272,6 +284,7 @@ fn should_scaffold(repo: &Path, req: &HiveRequest, stack: ProjectStack) -> bool 
             repo.join("pyproject.toml").exists() || repo.join("requirements.txt").exists()
         }
         ProjectStack::NodeMinimal => repo.join("package.json").exists(),
+        ProjectStack::FlutterApp => repo.join("pubspec.yaml").exists(),
     };
     if manifest && !req.force_scaffold {
         return false;
@@ -516,6 +529,198 @@ fn scaffold_node(repo: &Path, req: &HiveRequest) -> Result<()> {
     Ok(())
 }
 
+/// Esqueleto Flutter: `pubspec.yaml`, `lib/`, `test/`, y si `flutter` está en PATH tras `pub get`
+/// intenta `flutter create .` para añadir `android/`, `ios/`, etc. (simulador / dispositivo sin pasos manuales).
+fn scaffold_flutter(repo: &Path, req: &HiveRequest) -> Result<()> {
+    let pkg = slug_package_name(&req.title);
+    let title_esc = req.title.replace('"', "'");
+    if !repo.join("pubspec.yaml").exists() {
+        let pubspec = format!(
+            r#"name: {pkg}
+description: "{title_esc}"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+"#,
+            pkg = pkg,
+            title_esc = title_esc.replace('\n', " ")
+        );
+        fs::write(repo.join("pubspec.yaml"), pubspec)?;
+    }
+
+    fs::create_dir_all(repo.join("lib"))?;
+    if !repo.join("lib").join("main.dart").exists() {
+        let main_dart = format!(
+            r#"import 'package:flutter/material.dart';
+
+/// Solicitud Hive: {title}
+/// {desc}
+void main() => runApp(const HiveBootstrapApp());
+
+class HiveBootstrapApp extends StatelessWidget {{
+  const HiveBootstrapApp({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return MaterialApp(
+      title: '{title_short}',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: const _HomePage(),
+    );
+  }}
+}}
+
+class _HomePage extends StatelessWidget {{
+  const _HomePage();
+
+  @override
+  Widget build(BuildContext context) {{
+    return Scaffold(
+      appBar: AppBar(title: const Text('Hola mundo')),
+      body: const Center(
+        child: Text(
+          'Hola mundo',
+          style: TextStyle(fontSize: 24),
+        ),
+      ),
+    );
+  }}
+}}
+"#,
+            title = req.title.replace('\n', " ").replace('{', "(").replace('}', ")"),
+            desc = req.description.replace('\n', " ").replace('{', "(").replace('}', ")"),
+            title_short = req
+                .title
+                .chars()
+                .take(40)
+                .collect::<String>()
+                .replace('\'', "")
+                .replace('{', "(")
+                .replace('}', ")"),
+        );
+        fs::write(repo.join("lib").join("main.dart"), main_dart)?;
+    }
+
+    fs::create_dir_all(repo.join("test"))?;
+    if !repo.join("test").join("widget_test.dart").exists() {
+        let test_dart = r#"import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('placeholder', () {
+    expect(1 + 1, 2);
+  });
+}
+"#;
+        fs::write(repo.join("test").join("widget_test.dart"), test_dart)?;
+    }
+
+    if !repo.join("analysis_options.yaml").exists() {
+        fs::write(
+            repo.join("analysis_options.yaml"),
+            "include: package:flutter_lints/flutter.yaml\n",
+        )?;
+    }
+
+    if !repo.join(".gitignore").exists() {
+        fs::write(
+            repo.join(".gitignore"),
+            "# Flutter/Dart\n\
+.dart_tool/\n\
+.flutter-plugins-dependencies\n\
+build/\n\
+*.iml\n\
+.DS_Store\n\
+.hive_worker_*.md\n",
+        )?;
+    }
+
+    fs::create_dir_all(repo.join("docs"))?;
+    fs::write(
+        repo.join("docs").join("HIVE_SPEC.md"),
+        format!(
+            "# Especificación\n\n## Título\n{}\n\n## Descripción\n{}\n\n## Stack\n`flutter_app`\n",
+            req.title, req.description
+        ),
+    )?;
+
+    let flutter_ok = Command::new("flutter")
+        .current_dir(repo)
+        .args(["pub", "get"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if flutter_ok {
+        tracing::info!(package = %pkg, "bootstrap Flutter: pubspec + lib/; flutter pub get ok");
+        try_flutter_create_platforms(repo, &pkg);
+    } else {
+        tracing::info!(
+            package = %pkg,
+            "bootstrap Flutter: pubspec + lib/ (ejecuta `flutter pub get` cuando tengas el SDK)"
+        );
+    }
+
+    Ok(())
+}
+
+/// Añade carpetas de plataforma (`android`, `ios`, …) para poder ejecutar en simulador o dispositivo.
+/// No falla el andamiaje si el comando falla (red, licencias, etc.).
+fn try_flutter_create_platforms(repo: &Path, project_name: &str) {
+    if repo.join("android").is_dir() && repo.join("ios").is_dir() {
+        tracing::info!(
+            path = %repo.display(),
+            "bootstrap Flutter: plataformas ya presentes; omito flutter create"
+        );
+        return;
+    }
+    let out = Command::new("flutter")
+        .current_dir(repo)
+        .args(["create", ".", "--project-name", project_name])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            tracing::info!(
+                path = %repo.display(),
+                "bootstrap Flutter: flutter create . (plataformas para simulador/dispositivo)"
+            );
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            tracing::warn!(
+                path = %repo.display(),
+                stderr = %stderr,
+                stdout = %stdout,
+                "bootstrap Flutter: flutter create . falló; puedes ejecutarlo a mano en el repo"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                path = %repo.display(),
+                error = %e,
+                "bootstrap Flutter: no se pudo ejecutar flutter create ."
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,6 +732,8 @@ mod tests {
         assert_eq!(parse_stack("RUST_BINARY"), Some(ProjectStack::RustBinary));
         assert_eq!(parse_stack("python"), Some(ProjectStack::PythonApp));
         assert_eq!(parse_stack("node_minimal"), Some(ProjectStack::NodeMinimal));
+        assert_eq!(parse_stack("flutter_app"), Some(ProjectStack::FlutterApp));
+        assert_eq!(parse_stack("dart"), Some(ProjectStack::FlutterApp));
         assert_eq!(parse_stack("auto"), Some(ProjectStack::Auto));
         assert_eq!(parse_stack("nope"), None);
     }

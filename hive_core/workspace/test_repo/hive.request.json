@@ -1,7 +1,0 @@
-{
-  "title": "App móvil Flutter: rifa de 100 números",
-  "description": "Crear una aplicación móvil **bien elaborada en Flutter (Dart)** para jugar o administrar una **rifa con exactamente 100 números** (por ejemplo 1–100; dejar la regla documentada en README).\n\n**Alcance mínimo**\n- Interfaz clara y cuidada (Material o Cupertino): listado o cuadrícula de los 100 números, estado de cada número (libre / reservado / ganador según diseño).\n- Flujo de sorteo: selección aleatoria entre los números válidos, con posibilidad de reiniciar ronda o nueva rifa (lo que encaje con el diseño).\n- Código organizado: `lib/` con widgets y, si aplica, modelos o providers sencillos.\n- Incluir `pubspec.yaml` válido y un **README** con requisitos (`flutter doctor`), cómo ejecutar (`flutter run`) y cómo probar la rifa.\n\n**Ubicación en el repo**\n- Generar el proyecto Flutter en una carpeta dedicada, p. ej. `flutter_rifa/` o `mobile/`, sin borrar el resto del repositorio salvo que sea imprescindible y esté justificado en el MR.\n\n**Calidad**\n- Evitar pantallas vacías; mensajes de ayuda o textos legales breves si la rifa es solo demostración.",
-  "stack": "auto",
-  "force_scaffold": false,
-  "work_mode": "build"
-}

@@ -12,7 +12,39 @@ pub fn validate_after_bootstrap(repo: &Path, stack: ProjectStack) -> Result<()> 
         ProjectStack::RustBinary | ProjectStack::Auto => validate_rust(repo),
         ProjectStack::PythonApp => validate_python(repo),
         ProjectStack::NodeMinimal => validate_node(repo),
+        ProjectStack::FlutterApp => validate_flutter(repo),
     }
+}
+
+fn validate_flutter(repo: &Path) -> Result<()> {
+    if !repo.join("pubspec.yaml").exists() {
+        return Ok(());
+    }
+    let flutter_ok = Command::new("flutter")
+        .current_dir(repo)
+        .args(["--version"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !flutter_ok {
+        tracing::warn!(
+            "Flutter SDK no encontrado en PATH: omite `flutter analyze` (instala Flutter o añade al PATH)"
+        );
+        return Ok(());
+    }
+    run_cmd(
+        repo,
+        "flutter",
+        &["pub", "get"],
+        "flutter pub get (¿Flutter en PATH?)",
+    )?;
+    run_cmd(
+        repo,
+        "flutter",
+        &["analyze", "--no-fatal-infos"],
+        "flutter analyze",
+    )?;
+    Ok(())
 }
 
 fn validate_rust(repo: &Path) -> Result<()> {

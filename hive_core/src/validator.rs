@@ -64,27 +64,12 @@ impl ResultValidator {
 
     /// Ejecuta tests y retorna resultado.
     pub fn run_tests(repo_root: &std::path::Path) -> Result<(bool, String), String> {
-        let output = std::process::Command::new("cargo")
-            .args(["test", "--no-fail-fast", "-q"])
-            .current_dir(repo_root)
-            .output()
-            .map_err(|e| e.to_string())?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Ok((output.status.success(), format!("{stdout}\n{stderr}")))
+        crate::repo_checks::validator_run_tests(repo_root)
     }
 
     /// Verifica compilación.
     pub fn check_compilation(repo_root: &std::path::Path) -> Result<(bool, String), String> {
-        let output = std::process::Command::new("cargo")
-            .args(["check", "-q"])
-            .current_dir(repo_root)
-            .output()
-            .map_err(|e| e.to_string())?;
-
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Ok((output.status.success(), stderr))
+        crate::repo_checks::validator_check_compilation(repo_root)
     }
 
     /// Validación completa: patch + compilación + tests.

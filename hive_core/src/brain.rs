@@ -112,6 +112,134 @@ impl LLMClient for OllamaClient {
     }
 }
 
+/// URL `…/v1/chat/completions` a partir de una base tipo `https://api.groq.com/openai/v1` o `https://api.openai.com/v1`.
+pub fn openai_chat_completions_url(base: &str) -> String {
+    let b = base.trim().trim_end_matches('/');
+    if b.ends_with("/chat/completions") {
+        b.to_string()
+    } else if b.ends_with("/v1") {
+        format!("{}/chat/completions", b)
+    } else {
+        format!("{}/v1/chat/completions", b)
+    }
+}
+
+/// Cliente **OpenAI-compatible** (`/v1/chat/completions`): Groq, OpenRouter, Together, OpenAI, etc.
+pub struct OpenAiCompatibleClient {
+    chat_url: String,
+    api_key: String,
+    model: String,
+}
+
+impl OpenAiCompatibleClient {
+    pub fn new(base_url: &str, api_key: &str, model: &str) -> Self {
+        Self {
+            chat_url: openai_chat_completions_url(base_url),
+            api_key: api_key.to_string(),
+            model: model.to_string(),
+        }
+    }
+
+    /// `HIVE_OPENAI_BASE_URL` + clave (`HIVE_OPENAI_API_KEY` o `OPENAI_API_KEY`) + `HIVE_OPENAI_MODEL` (o `OPENAI_MODEL`).
+    pub fn try_from_env() -> Option<Self> {
+        let base = std::env::var("HIVE_OPENAI_BASE_URL").ok()?;
+        let base = base.trim();
+        if base.is_empty() {
+            return None;
+        }
+        let key = std::env::var("HIVE_OPENAI_API_KEY")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok().filter(|s| !s.trim().is_empty()))?;
+        let model = std::env::var("HIVE_OPENAI_MODEL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| std::env::var("OPENAI_MODEL").ok().filter(|s| !s.trim().is_empty()))?;
+        Some(Self::new(base, key.trim(), model.trim()))
+    }
+}
+
+impl LLMClient for OpenAiCompatibleClient {
+    fn complete(&self, prompt: &str) -> LLMFuture {
+        let client = reqwest::Client::new();
+        let url = self.chat_url.clone();
+        let api_key = self.api_key.clone();
+        let model = self.model.clone();
+        let prompt = prompt.to_string();
+
+        Box::pin(async move {
+            let mut req = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .header("Content-Type", "application/json");
+
+            // OpenRouter (y similares) recomiendan estas cabeceras para modelos gratuitos / ranking.
+            if let Ok(s) = std::env::var("HIVE_OPENAI_HTTP_REFERER") {
+                let t = s.trim();
+                if !t.is_empty() {
+                    req = req.header("HTTP-Referer", t);
+                }
+            }
+            if let Ok(s) = std::env::var("HIVE_OPENAI_APP_TITLE") {
+                let t = s.trim();
+                if !t.is_empty() {
+                    req = req.header("X-Title", t);
+                }
+            }
+
+            let http = req
+                .json(&serde_json::json!({
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2,
+                    "stream": false
+                }))
+                .send()
+                .await?;
+
+            let status = http.status();
+            let body_text = http.text().await.unwrap_or_default();
+            let body: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
+                anyhow!(
+                    "OpenAI-compatible: JSON inválido (HTTP {status}): {e}; cuerpo: {}",
+                    trunc_body(&body_text, 400)
+                )
+            })?;
+
+            if let Some(err) = body.get("error") {
+                let msg = err
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&body_text);
+                anyhow::bail!("API chat completions: {msg} (HTTP {status}, modelo `{model}`)");
+            }
+
+            if !status.is_success() {
+                anyhow::bail!(
+                    "OpenAI-compatible HTTP {status}: {}",
+                    trunc_body(&body_text, 600)
+                );
+            }
+
+            let text = body
+                .get("choices")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|ch| ch.get("message"))
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str());
+
+            match text {
+                Some(s) if !s.trim().is_empty() => Ok(s.to_string()),
+                _ => Err(anyhow!(
+                    "OpenAI-compatible: sin choices[0].message.content (HTTP {status}). Fragmento: {}",
+                    trunc_body(&body_text, 500)
+                )),
+            }
+        })
+    }
+}
+
 /// El Cerebro - Genera código real con LLM
 pub struct Brain {
     llm_client: Box<dyn LLMClient>,
@@ -542,9 +670,23 @@ impl StartsToUppercase for str {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_llm_code_response;
+    use super::{openai_chat_completions_url, parse_llm_code_response};
     use crate::blackboard::FileAction;
     use std::path::Path;
+
+    #[test]
+    fn openai_chat_url_groq_style() {
+        assert_eq!(
+            openai_chat_completions_url("https://api.groq.com/openai/v1"),
+            "https://api.groq.com/openai/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn openai_chat_url_already_full() {
+        let u = "https://example.com/v1/chat/completions";
+        assert_eq!(openai_chat_completions_url(u), u);
+    }
 
     #[test]
     fn parse_llm_code_response_extrae_bloque_file_code() {
