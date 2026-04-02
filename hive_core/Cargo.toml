@@ -50,7 +50,7 @@ tokio-tungstenite = { version = "0.26", optional = true }
 tungstenite = { version = "0.26", optional = true }
 
 # AST code analysis
-tree-sitter = { version = "0.24", optional = true }
+tree-sitter = { version = "0.26", optional = true }
 
 # File system watcher
 notify = { version = "7.0", optional = true }
